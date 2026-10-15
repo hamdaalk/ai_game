@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Survey Says AI Edition</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+/* Layout: one game-show stage (score bar → question → 2×3 answer board → status row) plus a host drawer/page that only the facilitator sees.
+   Deliberately single-theme: a lit TV studio, dark navy with gold board lights. */
+:root{
+  --stage:#0a1430; --stage2:#13265c; --tile:#1d3f9a; --tile2:#0e2468; --tileback:#2a5bd6; --line:#2f4ea8;
+  --gold:#ffc83d; --gold2:#f29f05; --ink:#f7f5ff; --muted:#a9b5dc; --dim:#6f7fb3;
+  --verify:#25e0c4; --protect:#ff6f91; --strike:#ff3d3d; --ok:#4ade80;
+  --panel:#0f1c42; --panel2:#172a5e; --field:#081230;
+  --f-display:'Bungee','Arial Black',Impact,sans-serif;
+  --f-body:'Atkinson Hyperlegible','Segoe UI',system-ui,sans-serif;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--stage);color:var(--ink);font-family:var(--f-body);font-size:16px;overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+kbd{font-family:var(--f-body);font-size:.72em;font-weight:700;background:var(--field);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 6px;color:var(--muted);white-space:nowrap}
+
+#app{height:100%;display:flex}
+#stage{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;gap:clamp(8px,1.6vh,20px);position:relative;overflow:auto;
+  padding-block:clamp(10px,2vh,26px);padding-left:max(clamp(16px,2.4vw,44px),env(safe-area-inset-left,0px));padding-right:max(clamp(16px,2.4vw,44px),env(safe-area-inset-right,0px));
+  background:radial-gradient(ellipse 70% 45% at 50% -5%,#2a4fb8 0%,transparent 70%),radial-gradient(ellipse 50% 40% at 0% 100%,rgba(37,224,196,.12),transparent 70%),radial-gradient(ellipse 50% 40% at 100% 100%,rgba(255,111,145,.12),transparent 70%),var(--stage)}
+
+/* score bar */
+.scorebar{display:grid;grid-template-columns:1fr auto 1fr;gap:clamp(8px,1.5vw,24px);align-items:stretch}
+.team{--c:var(--verify);border:3px solid color-mix(in srgb,var(--c) 55%,transparent);background:linear-gradient(180deg,color-mix(in srgb,var(--c) 18%,var(--panel)),var(--panel));border-radius:18px;padding:clamp(8px,1.2vh,16px) clamp(12px,1.6vw,24px);display:flex;align-items:center;justify-content:space-between;gap:12px;transition:box-shadow .3s,transform .3s;min-width:0}
+.team.t1{--c:var(--protect);flex-direction:row-reverse}
+.team .tname{font-weight:700;font-size:clamp(15px,1.7vw,30px);letter-spacing:.04em;text-transform:uppercase;color:var(--c);min-width:0;overflow-wrap:anywhere}
+.team .tag{display:block;font-size:.55em;letter-spacing:.14em;color:var(--ink);opacity:0;transition:opacity .3s}
+.team .tscore{font-family:var(--f-display);font-size:clamp(30px,4.6vw,86px);line-height:1;font-variant-numeric:tabular-nums;color:var(--ink)}
+.team.control{box-shadow:0 0 0 3px var(--c),0 0 40px color-mix(in srgb,var(--c) 60%,transparent)}
+.team.control .tag{opacity:1}
+.team.bump{transform:scale(1.04)}
+.center{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-width:clamp(120px,14vw,240px)}
+.roundlabel{font-family:var(--f-display);font-size:clamp(12px,1.2vw,22px);color:var(--gold);letter-spacing:.04em;text-align:center}
+.mult{display:inline-block;background:var(--strike);color:#fff;border-radius:999px;padding:1px 10px;margin-left:6px;animation:pulse 1.4s ease-in-out infinite}
+.bank{background:var(--field);border:3px solid var(--gold);border-radius:14px;padding:2px 18px 6px;text-align:center;box-shadow:inset 0 0 18px rgba(255,200,61,.25)}
+.bank span{display:block;font-size:clamp(10px,.8vw,14px);letter-spacing:.2em;color:var(--muted);font-weight:700}
+.bank b{font-family:var(--f-display);font-weight:400;font-size:clamp(28px,3.6vw,68px);line-height:1;color:var(--gold);font-variant-numeric:tabular-nums}
+
+/* screens */
+.screen{flex:1;min-height:0;display:flex;flex-direction:column;gap:clamp(8px,1.6vh,20px)}
+.qwrap{text-align:center}
+.mission{font-size:clamp(12px,1vw,18px);font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+.mission em{font-style:normal;color:var(--gold)}
+#question{margin:.15em auto 0;max-width:30ch;font-size:clamp(22px,3.3vw,62px);line-height:1.12;text-wrap:balance;font-weight:700}
+
+.board{flex:1;min-height:clamp(220px,40vh,2000px);display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(3,minmax(52px,1fr));grid-auto-flow:column;gap:clamp(8px,1.2vw,18px);
+  padding:clamp(10px,1.3vw,22px);border-radius:26px;background:linear-gradient(180deg,#0c1a44,#081232);border:4px solid var(--gold);box-shadow:0 0 0 6px #0a1430,0 0 0 9px var(--gold2),0 20px 60px rgba(0,0,0,.5)}
+.tile{perspective:900px;min-height:0}
+.tile .inner{position:relative;width:100%;height:100%;transform-style:preserve-3d;transition:transform .6s cubic-bezier(.3,1.4,.5,1)}
+.tile.on .inner{transform:rotateX(180deg)}
+.face{position:absolute;inset:0;border-radius:12px;backface-visibility:hidden;display:flex;align-items:center;overflow:hidden}
+.front{justify-content:center;background:linear-gradient(180deg,var(--tile),var(--tile2));border:2px solid var(--line);box-shadow:inset 0 2px 0 rgba(255,255,255,.18),inset 0 -6px 14px rgba(0,0,0,.35)}
+.front .num{font-family:var(--f-display);font-size:clamp(20px,2.6vw,46px);color:#1a2350;background:radial-gradient(circle at 40% 35%,#ffe28a,var(--gold) 55%,var(--gold2));border-radius:50%/46%;padding:.05em .9em;box-shadow:0 0 18px rgba(255,200,61,.5)}
+.tile.empty .front .num{opacity:.15}
+.back{transform:rotateX(180deg);background:linear-gradient(180deg,var(--tileback),#1b40a8);border:2px solid #7ea0ff;justify-content:space-between;gap:10px;padding-left:clamp(10px,1.2vw,22px)}
+.back .ans{font-weight:700;text-transform:uppercase;font-size:clamp(15px,2vw,38px);line-height:1.08;letter-spacing:.01em;min-width:0;overflow-wrap:anywhere;text-shadow:0 2px 0 rgba(0,0,0,.35)}
+.back .pts{align-self:stretch;display:flex;align-items:center;justify-content:center;min-width:clamp(54px,6vw,110px);background:#0b1a4a;border-left:2px solid #7ea0ff;font-family:var(--f-display);font-size:clamp(20px,2.6vw,48px);color:var(--gold);font-variant-numeric:tabular-nums}
+.tile.late .back{background:linear-gradient(180deg,#334070,#25305a);border-color:#4b5a8f}
+.tile.late .back .pts{color:var(--dim);border-color:#4b5a8f}
+
+.status{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px}
+.phase{font-weight:700;font-size:clamp(14px,1.5vw,28px);letter-spacing:.04em;justify-self:start;padding:.3em .8em;border-radius:999px;background:var(--panel2);border:2px solid var(--line)}
+.phase.steal{border-color:var(--strike);background:color-mix(in srgb,var(--strike) 25%,var(--panel));animation:pulse 1s infinite}
+.phase.won{border-color:var(--ok);color:var(--ok)}
+.strikes{display:flex;gap:clamp(6px,.8vw,14px)}
+.strikes i{font-style:normal;font-family:var(--f-display);font-size:clamp(22px,2.8vw,52px);line-height:1;width:1.35em;height:1.2em;display:grid;place-items:center;border-radius:10px;border:3px solid #3a477a;color:#3a477a;background:var(--field)}
+.strikes i.hit{color:#fff;background:var(--strike);border-color:#ffb3b3;box-shadow:0 0 22px rgba(255,61,61,.7)}
+
+.timer{justify-self:end;display:flex;flex-direction:column;align-items:stretch;gap:4px;min-width:clamp(100px,9vw,170px);padding:6px 14px 8px;border-radius:14px;background:var(--field);border:3px solid var(--line);transition:border-color .2s,opacity .3s}
+.timer .lbl{font-size:clamp(10px,.75vw,13px);letter-spacing:.2em;font-weight:700;color:var(--muted);text-align:center}
+.timer .t{font-family:var(--f-display);font-size:clamp(30px,3.6vw,68px);line-height:1;text-align:center;font-variant-numeric:tabular-nums}
+.timer .bar{height:8px;border-radius:4px;background:#1c2a5c;overflow:hidden}
+.timer .bar b{display:block;height:100%;width:100%;background:var(--ok);transform-origin:left;transition:background .3s}
+.timer.idle{opacity:.55}
+.timer.running{border-color:var(--ok)}
+.timer.low{border-color:var(--strike);animation:pulse .5s infinite alternate}
+.timer.low .bar b{background:var(--strike)}
+.timer.done{border-color:var(--strike)}
+.timer.done .t{color:var(--strike)}
+
+.takeaway{display:flex;gap:clamp(10px,1.4vw,24px);align-items:center;background:linear-gradient(90deg,#3a2a05,#1a1a3a);border:3px solid var(--gold);border-radius:16px;padding:clamp(10px,1.4vh,18px) clamp(14px,1.6vw,28px);animation:rise .5s cubic-bezier(.3,1.4,.5,1)}
+.takeaway b{font-family:var(--f-display);font-weight:400;color:var(--gold);font-size:clamp(12px,1.1vw,20px);letter-spacing:.06em;white-space:nowrap}
+.takeaway p{margin:0;font-size:clamp(17px,2vw,36px);line-height:1.2;font-weight:700;text-wrap:balance}
+
+/* title */
+#titleScreen{align-items:center;justify-content:center;text-align:center}
+.logo{display:inline-flex;flex-direction:column;align-items:center;padding:clamp(18px,3vw,48px) clamp(30px,6vw,110px);border-radius:50%;background:radial-gradient(ellipse at 50% 40%,#2c5ad8,#0d2266 75%);border:clamp(5px,.6vw,10px) solid var(--gold);box-shadow:0 0 0 8px #0a1430,0 0 0 12px var(--gold2),0 0 90px rgba(255,200,61,.35);animation:glow 3s ease-in-out infinite}
+.logo h1{margin:0;font-family:var(--f-display);font-weight:400;font-size:clamp(40px,8vw,150px);line-height:.95;color:var(--gold);text-shadow:0 5px 0 #a0560a,0 10px 24px rgba(0,0,0,.5)}
+.logo .sub{font-family:var(--f-display);font-size:clamp(14px,1.8vw,32px);letter-spacing:.08em;color:#fff}
+.titleq{margin-top:clamp(18px,3vh,40px);font-size:clamp(18px,2.2vw,40px);font-weight:700;color:var(--muted)}
+.titleq strong{color:var(--ink)}
+.vs{display:flex;gap:clamp(14px,3vw,60px);align-items:center;justify-content:center;flex-wrap:wrap;margin-top:clamp(12px,2vh,28px);font-family:var(--f-display);font-size:clamp(20px,2.6vw,48px)}
+.vs .a{color:var(--verify)} .vs .b{color:var(--protect)} .vs .x{color:var(--muted);font-size:.6em}
+
+/* fast money */
+#fmScreen .fmhead{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.fmtitle{font-family:var(--f-display);font-size:clamp(28px,4vw,76px);color:var(--gold);line-height:1;text-shadow:0 4px 0 #a0560a}
+.fmtitle small{display:block;font-family:var(--f-body);font-weight:700;font-size:clamp(13px,1.2vw,22px);color:var(--muted);text-shadow:none;letter-spacing:.06em;margin-top:6px}
+.fmgrid{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:clamp(10px,1.4vw,24px);padding:clamp(10px,1.3vw,22px);border-radius:26px;background:linear-gradient(180deg,#0c1a44,#081232);border:4px solid var(--gold);box-shadow:0 0 0 6px #0a1430,0 0 0 9px var(--gold2)}
+.fmcol{display:grid;grid-template-rows:auto repeat(5,minmax(40px,1fr));gap:clamp(6px,.8vw,12px);min-width:0}
+.fmcol h3{margin:0;text-align:center;font-size:clamp(13px,1.2vw,22px);letter-spacing:.2em;color:var(--muted)}
+.fmcell{display:flex;align-items:stretch;border-radius:10px;overflow:hidden;background:linear-gradient(180deg,var(--tile),var(--tile2));border:2px solid var(--line)}
+.fmcell .ans{flex:1;min-width:0;display:flex;align-items:center;padding:0 14px;font-weight:700;text-transform:uppercase;font-size:clamp(15px,1.9vw,34px);overflow-wrap:anywhere}
+.fmcell .pts{min-width:clamp(54px,5.5vw,100px);display:flex;align-items:center;justify-content:center;background:#0b1a4a;border-left:2px solid var(--line);font-family:var(--f-display);font-size:clamp(18px,2.4vw,44px);color:var(--gold)}
+.fmcell.on{border-color:#7ea0ff;background:linear-gradient(180deg,var(--tileback),#1b40a8);animation:pop .35s}
+.fmcell.covered .ans{color:transparent;background:repeating-linear-gradient(45deg,#1a2f72 0 10px,#15275f 10px 20px)}
+.fmcell.covered .pts{color:transparent}
+.fmfoot{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center}
+.goal{display:flex;flex-direction:column;gap:6px}
+.goal .gl{display:flex;justify-content:space-between;font-weight:700;font-size:clamp(13px,1.2vw,22px);color:var(--muted)}
+.goal .gb{height:clamp(16px,2vh,28px);border-radius:999px;background:var(--field);border:2px solid var(--line);overflow:hidden}
+.goal .gb b{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--gold2),var(--gold));transition:width .8s cubic-bezier(.3,1.3,.5,1)}
+.goal.win .gb b{background:linear-gradient(90deg,var(--ok),#b7ffcf)}
+.fmtotal{font-family:var(--f-display);font-size:clamp(36px,5vw,96px);color:var(--gold);line-height:1;font-variant-numeric:tabular-nums}
+
+/* overlays */
+#xOverlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:2vw;pointer-events:none;z-index:40;background:rgba(40,0,0,.35)}
+#xOverlay span{font-family:var(--f-display);font-size:min(30vw,46vh);line-height:1;color:var(--strike);-webkit-text-stroke:clamp(3px,.5vw,8px) #fff;filter:drop-shadow(0 0 40px rgba(255,61,61,.9));animation:xin .35s cubic-bezier(.3,1.6,.5,1) both}
+#confetti{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:45}
+.tools{position:absolute;right:max(10px,env(safe-area-inset-right,0px));bottom:max(10px,env(safe-area-inset-bottom,0px));display:flex;gap:8px;z-index:20;transition:opacity .4s}
+.tools.idle{opacity:0}
+.mode-host #xOverlay span{font-size:min(15vw,40vh)}
+.mode-host #tools{display:none}
+.nopreview #stage{display:none!important}
+.nopreview.mode-host #host{width:100%}
+.nopreview .hgrid{max-width:760px;margin:0 auto}
+.conn{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:700;padding:5px 12px;border-radius:999px;border:2px solid var(--line);background:var(--field)}
+.conn::before{content:'';width:10px;height:10px;border-radius:50%;background:var(--dim)}
+.conn.live{border-color:var(--ok);color:var(--ok)}.conn.live::before{background:var(--ok)}
+.conn.wait{color:var(--gold)}.conn.wait::before{background:var(--gold)}
+.conn.off{border-color:var(--strike);color:#ffb3b3}.conn.off::before{background:var(--strike)}
+.chip.warnchip{border-color:var(--strike);color:#ffb3b3;cursor:default}
+.chip{border:2px solid var(--line);background:var(--panel);border-radius:999px;padding:6px 14px;font-weight:700;font-size:14px;cursor:pointer}
+.chip:hover{border-color:var(--gold)}
+.chip.sound{border-color:var(--gold);color:var(--gold);animation:pulse 1.4s infinite}
+
+/* host */
+#host{background:var(--panel);border-left:3px solid var(--gold);overflow:auto;z-index:30;padding-block:16px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.mode-display #host{display:none}
+.mode-combined #host{position:fixed;top:0;right:0;bottom:0;width:min(580px,100%);transform:translateX(105%);transition:transform .35s cubic-bezier(.3,1,.4,1);box-shadow:-20px 0 60px rgba(0,0,0,.6)}
+.mode-combined.drawer-open #host{transform:none}
+.mode-combined .hgrid{display:flex;flex-direction:column;gap:14px}
+/* start menu */
+#menu{position:fixed;inset:0;z-index:70;overflow:auto;display:flex;align-items:center;justify-content:center;padding-block:24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:radial-gradient(ellipse 70% 50% at 50% 0%,#2a4fb8 0%,transparent 70%),var(--stage)}
+.menuin{width:min(1060px,100%);display:flex;flex-direction:column;align-items:center;gap:22px}
+.menuin .logo{padding:14px 46px}
+.menuin .logo h1{font-size:clamp(34px,5vw,64px)}
+.menuin h2{margin:0;font-size:clamp(20px,2.4vw,30px);text-align:center;text-wrap:balance}
+.opts{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;width:100%}
+.opt{background:var(--panel2);border:2px solid var(--line);border-radius:20px;padding:22px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.opt.main{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 18px 50px rgba(0,0,0,.35)}
+.opt .k{font-family:var(--f-display);font-size:14px;color:var(--gold);letter-spacing:.08em}
+.opt h3{margin:0;font-size:24px}
+.opt p{margin:0;color:var(--muted);line-height:1.5}
+.opt .sub{display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:14px;background:var(--field);border:1px solid var(--line)}
+.opt .sub b{font-size:15px}
+.codein{font-family:var(--f-display)!important;font-size:28px!important;letter-spacing:.3em;text-transform:uppercase;text-align:center;width:100%!important;max-width:220px}
+.menufoot{color:var(--muted);font-size:14px;text-align:center;max-width:70ch;line-height:1.5}
+/* room code on the board */
+.roomblock{margin-top:clamp(14px,2.4vh,30px);display:flex;align-items:center;gap:22px;padding:14px 22px;border-radius:18px;background:var(--panel);border:3px dashed var(--gold);text-align:left}
+.roomblock .rc{font-family:var(--f-display);font-size:clamp(40px,5vw,90px);color:var(--gold);letter-spacing:.12em;line-height:1}
+.roomblock .rt{font-size:clamp(14px,1.3vw,22px);font-weight:700;color:var(--muted);max-width:28ch;line-height:1.35}
+.roomblock .rt b{color:var(--ink)}
+#qr{background:#fff;padding:8px;border-radius:10px;line-height:0}
+#qr img,#qr canvas{width:clamp(90px,9vw,150px)!important;height:auto!important}
+#roomChip{position:absolute;left:max(10px,env(safe-area-inset-left,0px));bottom:max(10px,env(safe-area-inset-bottom,0px));z-index:20}
+.chip.live{border-color:var(--ok);color:var(--ok)}
+.chip.wait{border-color:var(--gold);color:var(--gold)}
+.chip.off{border-color:var(--strike);color:#ffb3b3}
+@media (max-width:720px){.opts{grid-template-columns:1fr}.roomblock{flex-wrap:wrap;justify-content:center;text-align:center}}
+.mode-host #host{width:min(600px,46%);flex:none}
+.mode-host #stage{outline:4px solid var(--gold);outline-offset:-4px}
+.previewTag{display:none;position:absolute;top:max(8px,env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:25;background:var(--gold);color:#1a1a33;font-weight:700;font-size:13px;letter-spacing:.12em;padding:4px 14px;border-radius:0 0 10px 10px;white-space:nowrap}
+.mode-host .previewTag{display:block}
+.mode-host .hgrid{display:flex;flex-direction:column;gap:14px}
+.hcol{display:flex;flex-direction:column;gap:14px;min-width:0}
+.hgrid>.hcol{display:contents}
+.hhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.mode-host .hhead{max-width:1240px;margin-left:auto;margin-right:auto}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
+.hhead h2{margin:2px 0 0;font-family:var(--f-display);font-weight:400;font-size:22px}
+.hhead p{margin:4px 0 0;color:var(--muted);font-size:14px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.card h3{margin:0;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center;gap:8px}
+.card.live{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+.hq{font-size:20px;font-weight:700;line-height:1.25;text-wrap:balance}
+.note{font-size:14px;color:var(--muted);line-height:1.45}
+.note.warn{color:var(--gold)}
+.note.ok{color:var(--ok)}
+.btn{border:2px solid var(--line);background:var(--field);border-radius:10px;padding:8px 12px;font-weight:700;font-size:15px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;line-height:1.1;text-decoration:none;color:var(--ink)}
+.btn:hover:not(:disabled){border-color:var(--gold)}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.sm{padding:5px 10px;font-size:14px}
+.btn.big{padding:12px 16px;font-size:17px}
+.btn.gold{background:var(--gold);border-color:var(--gold);color:#1a1a33}
+.btn.gold kbd{background:#ffe9a8;color:#5a3a00;border-color:#d9a21e}
+.btn.red{background:var(--strike);border-color:var(--strike);color:#fff}
+.btn.red kbd{background:#ffb3b3;color:#600;border-color:#d33}
+.btn.t0{border-color:var(--verify);color:var(--verify)} .btn.t1{border-color:var(--protect);color:var(--protect)}
+.btn.t0.sel{background:var(--verify);color:#06262a} .btn.t1.sel{background:var(--protect);color:#3a0614}
+.btn.sel{background:var(--ink);color:var(--stage);border-color:var(--ink)}
+.btn.sel kbd{color:var(--stage)}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.arow{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:8px 10px;border-radius:10px;background:var(--field);border:1px solid var(--line)}
+.arow.on{background:#1d3f9a;border-color:#7ea0ff}
+.arow.late{background:#2a3360}
+.arow .atext{font-weight:700;overflow-wrap:anywhere}
+.arow .apts{font-family:var(--f-display);color:var(--gold);font-size:18px;min-width:2.2em;text-align:right}
+.arow input{min-width:0}
+input[type=text],input[type=number],select,textarea{background:var(--field);border:2px solid var(--line);border-radius:8px;padding:7px 10px;width:100%;min-width:0}
+input[type=number]{width:5.5em}
+textarea{font:inherit;color:inherit;resize:vertical;min-height:3em}
+input[type=range]{width:100%;accent-color:var(--gold)}
+input[type=checkbox]{width:20px;height:20px;accent-color:var(--gold)}
+label.chk{display:flex;gap:10px;align-items:center;cursor:pointer;font-weight:700}
+.dots{display:flex;gap:6px}
+.dots i{font-style:normal;font-family:var(--f-display);width:34px;height:34px;display:grid;place-items:center;border-radius:8px;border:2px solid #3a477a;color:#3a477a}
+.dots i.hit{background:var(--strike);color:#fff;border-color:#ffb3b3}
+.bankline{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.bankline b{font-family:var(--f-display);font-weight:400;font-size:34px;color:var(--gold)}
+.htimer{font-family:var(--f-display);font-size:48px;line-height:1;font-variant-numeric:tabular-nums}
+.htimer.low{color:var(--strike)}
+.scoreline{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+.fmrow{display:grid;gap:6px;padding:10px;border-radius:10px;background:var(--field);border:1px solid var(--line)}
+.fmrow .q{font-weight:700}
+.fmrow .pl{display:grid;grid-template-columns:auto minmax(0,1fr) 5.5em auto;gap:6px;align-items:center}
+.fmrow .pl span{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.1em}
+.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:14px;color:var(--muted);line-height:1.45}
+.tips b{color:var(--ink)}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:14px;color:var(--muted);align-items:center}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--stage);font-weight:700;padding:10px 18px;border-radius:999px;z-index:60;box-shadow:0 10px 30px rgba(0,0,0,.4);max-width:calc(100% - 32px)}
+[hidden]{display:none!important}
+
+@keyframes pulse{50%{filter:brightness(1.35)}}
+@keyframes glow{50%{box-shadow:0 0 0 8px #0a1430,0 0 0 12px var(--gold2),0 0 140px rgba(255,200,61,.55)}}
+@keyframes xin{from{transform:scale(2.4) rotate(-12deg);opacity:0}to{transform:none;opacity:1}}
+@keyframes rise{from{transform:translateY(20px);opacity:0}}
+@keyframes pop{50%{transform:scale(1.04)}}
+
+@media (max-width:720px){
+  body{overflow:auto}
+  .scorebar{grid-template-columns:1fr 1fr}
+  .scorebar .center{grid-column:1/-1;grid-row:1;flex-direction:row}
+  .board{grid-template-columns:1fr;grid-template-rows:none;grid-auto-flow:row;grid-auto-rows:60px}
+  .status{grid-template-columns:1fr auto}
+  .status .strikes{grid-column:1/-1;justify-self:center;grid-row:1}
+  .fmgrid{grid-template-columns:1fr}
+  .fmfoot{grid-template-columns:1fr}
+}
+@media (max-width:1000px){
+  .mode-host #app{flex-direction:column;height:auto;min-height:100%}
+  .mode-host{overflow:auto}
+  .mode-host #stage{height:42vh;flex:none}
+  .mode-host #host{width:100%;border-left:0;border-top:3px solid var(--gold);overflow:visible}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <main id="stage" aria-live="polite">
+    <header class="scorebar">
+      <div class="team t0" id="team0"><span class="tname"><span class="nm"></span><span class="tag">● In control</span></span><span class="tscore">0</span></div>
+      <div class="center">
+        <div class="roundlabel" id="roundLabel"></div>
+        <div class="bank" id="bankBox"><span id="bankLbl">BANK</span><b id="bank">0</b></div>
+      </div>
+      <div class="team t1" id="team1"><span class="tname"><span class="nm"></span><span class="tag">● In control</span></span><span class="tscore">0</span></div>
+    </header>
+
+    <section class="screen" id="titleScreen">
+      <div class="logo"><h1>SURVEY<br>SAYS!</h1><span class="sub">AI EDITION</span></div>
+      <div class="titleq">We asked <strong>new government employees</strong>…</div>
+      <div class="vs"><span class="a" id="vsA"></span><span class="x">VS</span><span class="b" id="vsB"></span></div>
+      <div class="roomblock" id="roomBlock" hidden><div id="qr" hidden></div><div><div class="rt">Host, join room</div><div class="rc" id="roomCode">····</div><div class="rt" id="roomHow"></div></div></div>
+    </section>
+
+    <section class="screen" id="roundScreen" hidden>
+      <div class="qwrap">
+        <div class="mission" id="mission"></div>
+        <h1 id="question"></h1>
+      </div>
+      <div class="board" id="board"></div>
+      <div class="takeaway" id="takeaway" hidden><b>TAKEAWAY</b><p id="takeText"></p></div>
+      <div class="status">
+        <div class="phase" id="phase"></div>
+        <div class="strikes" id="strikes" aria-label="Strikes"><i>X</i><i>X</i><i>X</i></div>
+        <div class="timer idle" id="timer"><span class="lbl">TIME</span><span class="t">15</span><span class="bar"><b></b></span></div>
+      </div>
+    </section>
+
+    <section class="screen" id="fmScreen" hidden>
+      <div class="fmhead">
+        <div class="fmtitle">FAST MONEY<small id="fmWho"></small></div>
+        <div class="timer idle" id="timer2"><span class="lbl">TIME</span><span class="t">20</span><span class="bar"><b></b></span></div>
+      </div>
+      <div class="fmgrid">
+        <div class="fmcol" id="fmCol1"><h3>PLAYER 1</h3></div>
+        <div class="fmcol" id="fmCol2"><h3>PLAYER 2</h3></div>
+      </div>
+      <div class="fmfoot">
+        <div class="goal" id="goal"><div class="gl"><span>Combined score</span><span>200 wins the grand prize</span></div><div class="gb"><b></b></div></div>
+        <div class="fmtotal" id="fmTotal">0</div>
+      </div>
+    </section>
+
+    <span class="chip" id="roomChip" hidden></span>
+    <div class="tools" id="tools">
+      <button class="chip sound" id="soundChip" hidden>🔊 Click to turn on sound</button>
+      <button class="chip" id="fsBtn" title="Fullscreen (F)">Fullscreen</button>
+      <span class="chip warnchip" id="boardConn" hidden>Not connected to the host</span>
+    </div>
+    <div class="previewTag">LIVE PREVIEW · WHAT THE ROOM SEES</div>
+    <div id="xOverlay" hidden></div>
+    <canvas id="confetti"></canvas>
+  </main>
+  <aside id="host" aria-label="Host controls"></aside>
+</div>
+<div id="menu" hidden><div class="menuin">
+  <div class="logo"><h1>SURVEY SAYS!</h1><span class="sub">AI EDITION</span></div>
+  <h2>How are you running the game today?</h2>
+  <div class="opts">
+    <section class="opt main"><span class="k">OPTION 1 · RECOMMENDED</span><h3>Phone + big screen</h3>
+      <p>Control the game from your phone while the room watches the big screen. Both devices need internet and this same game file.</p>
+      <div class="sub"><b>On the computer connected to the projector</b><button class="btn big gold" id="goBoard">This is the big screen ▶</button></div>
+      <div class="sub"><b>On your phone</b><label class="note" for="joinCode">Type the 4-letter room code shown on the big screen</label>
+        <form class="row" id="joinForm"><input type="text" id="joinCode" class="codein" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD"><button class="btn big gold" type="submit">Join as host</button></form>
+        <p class="note" id="joinErr" hidden></p></div>
+    </section>
+    <section class="opt"><span class="k">OPTION 2 · BACKUP</span><h3>Screen only</h3>
+      <p>Everything runs on this one computer. No internet or phone needed, so use this if the room connection fails.</p>
+      <p>Press <kbd>H</kbd> to slide the host controls in and out, or open them in a second window on your laptop screen while the board shows on the projector.</p>
+      <button class="btn big" id="goSingle">Start on this screen ▶</button>
+    </section>
+  </div>
+  <p class="menufoot">Each device saves the game as you play, so you can switch options mid-game without losing scores. To come back here, open the host controls and choose Menu.</p>
+</div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+/* ---------- content from the facilitator script ---------- */
+const ROUNDS=[
+ {q:'Name something AI is used for in government services.',tag:'Mission 01',mult:1,answers:[['Answering public questions / chatbots',30],['Guiding people through services (TAMM)',24],['Drafting documents',16],['Summarising reports',12],['Analysing data',10],['Translation',8]],take:'The 2027 target is to embed AI in services, not just add a chatbot.',note:''},
+ {q:'Name one of the six parts of a strong AI prompt.',tag:'Mission 02',mult:1,answers:[['Task',28],['Role',22],['Format',17],['Context',13],['Constraints',11],['Verification',9]],take:'People forget the bottom two, and those are the ones that protect you.',note:''},
+ {q:'Name a vague word people put in prompts.',tag:'Mission 02',mult:1,answers:[['Short',30],['Good',24],['Something',16],['Interesting',12],['Better / nice',10],['People',8]],take:'If a colleague would ask “what do you mean?”, so does the AI.',note:''},
+ {q:'Name something AI must keep unchanged when it rewrites a government guide.',tag:'Mission 02',mult:1,answers:[['Fees',30],['Deadlines',25],['Eligibility rules',20],['Legal wording',10],['Dates and numbers',9],['Contact details',6]],take:'',note:''},
+ {q:'Name something AI might make up.',tag:'Mission 03',mult:1,answers:[['Sources / references',30],['Facts and statistics',22],['Quotes',15],['People / witnesses',13],['Dates',12],['Laws or policies',8]],take:'',note:'Tell the story of the New Mexico lawyer and his invented witnesses.'},
+ {q:'Name a way to check an AI answer before you use it.',tag:'Mission 03',mult:1,answers:[['Compare with the original source',35],['Ask a colleague or manager',20],['Check the citations',15],['Check the official website',12],['Read it fully yourself',10],['Ask the AI for its sources',8]],take:'Asking the AI to check itself is the lowest answer for a reason. Self-review isn’t independent checking.',note:''},
+ {q:'Name information you’d think twice about pasting into an AI tool.',tag:'Mission 04',mult:1,answers:[['Personal data (names, ID numbers)',34],['Confidential documents',22],['Passwords',14],['Salary or financial info',11],['Health information',10],['Case files',9]],take:'',note:''},
+ {q:'Name a decision AI should NOT make on its own.',tag:'Mission 04',mult:1,answers:[['Approving or rejecting applications',30],['Hiring or firing',22],['Payments and fines',18],['Legal judgements',12],['Benefit eligibility',10],['Disciplinary action',8]],take:'If rights, eligibility or money are affected, a person decides.',note:''},
+ {q:'Name a task AI could help you with in your first week.',tag:'Mission 05',mult:2,answers:[['Writing emails',30],['Summarising documents',25],['Meeting notes and actions',18],['Translation',10],['Building presentations',9],['Brainstorming ideas',8]],take:'',note:''},
+ {q:'Name a question to ask before you use an AI result.',tag:'Playbook slide',mult:3,answers:[['Is it accurate?',30],['Where’s the source?',24],['Am I allowed to use this tool?',18],['Is the data OK to share?',12],['Is it clear and fair?',10],['Who needs to approve it?',6]],take:'These answers group into the deck’s three checks: Permission, Proof, People.',note:''}
+];
+const FM_Q=['Name something you’d find in an AI prompt','Name a reason AI gets things wrong','Name a word that describes a good AI answer','Name a government service you’d like AI to make easier','Name someone to ask when you’re not sure a tool is allowed'];
+const QUICK=[-1,1,4,6,9,10];
+const FULL=[-1,0,1,2,3,4,5,6,7,8,9,10];
+
+/* ---------- role & state ---------- */
+const HASH=location.hash.slice(1);
+const ROLE=HASH==='single'?'single':HASH==='hostwin'?'hostwin':HASH==='board'?'board':/^phone-[A-Za-z]{4}$/.test(HASH)?'phone':'menu';
+const ROOMCODE=ROLE==='phone'?HASH.slice(6).toUpperCase():null;
+const MODE=(ROLE==='hostwin'||ROLE==='phone')?'host':ROLE==='menu'?'display':'combined';
+const CTRL=ROLE!=='menu';
+document.body.classList.add('mode-'+MODE,'role-'+ROLE);
+try{const np=localStorage.getItem('feud-nopreview-'+ROLE);if(MODE==='host'&&(np==='1'||(np===null&&ROLE==='phone')))document.body.classList.add('nopreview')}catch(e){}
+const MYID=Math.random().toString(36).slice(2,10);
+const PREFIX='survey-says-ai-';
+
+const clone=o=>JSON.parse(JSON.stringify(o));
+const freshRS=r=>({rev:r.answers.map(()=>0),strikes:0,awarded:null,award:0});
+function newState(){const rounds=clone(ROUNDS);return{v:1,seq:0,ts:0,teams:[{name:'Team Verify',score:0},{name:'Team Protect',score:0}],rounds,rs:rounds.map(freshRS),idx:-1,phase:'faceoff',control:null,showTake:false,timer:{dur:15,endAt:null,rem:15},fm:{rows:FM_Q.map(q=>({q,a1:'',p1:'',a2:'',p2:'',r1:false,r2:false})),hide1:false},flash:{n:0,t:0},party:0,quick:false,sfx:null}}
+const KEY='survey-says-game-v3';
+function loadState(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.v===1){s.timer.endAt=null;return s}}catch(e){}return newState()}
+let S=loadState();
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+let hist=[];
+let editMode=false, resetArmed=0, booted=true, firedFor=null;
+
+/* ---------- connections ----------
+   Screen only: the board window and an optional host window talk directly (postMessage + BroadcastChannel).
+   Phone + big screen: the two devices join a room over PeerJS (WebRTC); the free PeerJS server only introduces them. */
+const peerConns=new Set();let peer=null,popup=null,link={state:ROLE==='single'||ROLE==='menu'?'local':'wait',text:''};
+let bc=null;try{bc=new BroadcastChannel('survey-says-v3')}catch(e){}
+if(bc)bc.onmessage=e=>onMsg(e.data);
+window.addEventListener('message',e=>{if((window.opener&&e.source===window.opener)||(popup&&e.source===popup))onMsg(e.data)});
+function send(m){
+ try{bc&&bc.postMessage(m)}catch(e){}
+ try{if(window.opener&&!window.opener.closed)window.opener.postMessage(m,'*')}catch(e){}
+ try{if(popup&&!popup.closed)popup.postMessage(m,'*')}catch(e){}
+ peerConns.forEach(c=>{try{if(c.open)c.send(m)}catch(e){}});
+}
+const seenSfx=new Set();
+function onMsg(m){
+ if(!m||typeof m!=='object')return;
+ if(ROLE==='hostwin'&&(m.type==='state')&&link.state!=='live')setLink('live');
+ if(m.type==='state')applyRemote(m.s,m.at);
+ else if(m.type==='hello'){applyRemote(m.s,m.at);send(stateMsg())}
+ else if(m.type==='sfx')hearSfx(m);
+}
+function hearSfx(d){if(!d||!d.id||seenSfx.has(d.id)||typeof d.name!=='string'||!SOUNDS[d.name])return;seenSfx.add(d.id);play(d.name)}
+const stateMsg=()=>({type:'state',s:S,at:Date.now()});
+function applyRemote(s,at){
+ if(!s||s.v!==1||!Array.isArray(s.rounds)||!(s.seq>S.seq))return;
+ const prevEnd=S.timer.endAt;
+ const n=clone(s);
+ /* timers travel as "time left when sent", so device clocks never need to agree */
+ if(n.timer&&n.timer.endAt)n.timer.endAt=Date.now()+Math.max(0,n.timer.endAt-(at||n.ts||Date.now()));
+ S=n;save();
+ if(prevEnd&&!S.timer.endAt&&S.timer.rem<=0&&firedFor!==prevEnd){firedFor=prevEnd;play('timeup')}
+ if(S.sfx&&S.sfx.id)seenSfx.has(S.sfx.id)||(seenSfx.add(S.sfx.id),0);
+ renderAll();
+}
+function commit(){S.seq++;S.ts=Date.now();save();send(stateMsg());renderAll()}
+function snap(){hist.push(JSON.stringify(S));if(hist.length>50)hist.shift()}
+function sfx(name){const id=Math.random().toString(36).slice(2);seenSfx.add(id);play(name);send({type:'sfx',name,id})}
+
+function setLink(state,text){link={state,text};updRoomUI()}
+function linkText(){
+ if(ROLE==='phone')return{live:'Connected to room '+ROOMCODE,wait:'Connecting to room '+ROOMCODE+'…',off:link.text||'Not connected'}[link.state]||'';
+ if(ROLE==='board'){const n=[...peerConns].filter(c=>c.open).length;if(link.state==='off')return link.text||'Room offline';return n?'Host phone connected':'Waiting for the host phone'}
+ if(ROLE==='hostwin')return link.state==='live'?'Connected to the board window':'Looking for the board window…';
+ return'Screen only · works offline';
+}
+function updRoomUI(){
+ const t=linkText(),cls=link.state==='local'?'live':link.state;
+ const h=$('hConn');if(h){h.className='conn '+cls;h.textContent=t}
+ if(ROLE==='board'){
+  const n=[...peerConns].filter(c=>c.open).length,code=roomCodeNow||'····';
+  $('roomBlock').hidden=n>0&&S.idx!==-1;
+  $('roomCode').textContent=code;
+  $('roomHow').innerHTML=link.state==='off'?esc(link.text):n?'<b>Host phone connected.</b> Ready to play.':(location.protocol.startsWith('http')?'Scan the code, or open this game on your phone, choose <b>Join as host</b> and type the code.':'Open this game file on your phone, choose <b>Join as host</b> and type the code.');
+  const c=$('roomChip');c.hidden=false;c.className='chip '+(link.state==='off'?'off':n?'live':'wait');c.textContent=`Room ${code} · ${t}`;
+ }
+}
+
+/* ---- PeerJS loader ---- */
+function loadPeer(){return new Promise((res,rej)=>{if(window.Peer)return res();const sc=document.createElement('script');sc.src='https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';sc.onload=()=>window.Peer?res():rej();sc.onerror=rej;document.head.appendChild(sc)})}
+const ALPH='ABCDEFGHJKMNPQRSTUVWXYZ';
+const newCode=()=>Array.from({length:4},()=>ALPH[Math.floor(Math.random()*ALPH.length)]).join('');
+let roomCodeNow=null,idTries=0;
+
+async function startBoard(){
+ setLink('wait');
+ try{await loadPeer()}catch(e){setLink('off','Can’t reach the connection service. Check the internet, or press H, choose Menu and use Screen only.');return}
+ try{roomCodeNow=localStorage.getItem('survey-says-room')}catch(e){}
+ if(!roomCodeNow){roomCodeNow=newCode();try{localStorage.setItem('survey-says-room',roomCodeNow)}catch(e){}}
+ updRoomUI();showQR();
+ openBoardPeer();
+}
+function openBoardPeer(){
+ try{peer&&peer.destroy()}catch(e){}
+ peer=new Peer(PREFIX+roomCodeNow);
+ peer.on('open',()=>{idTries=0;setLink('wait')});
+ peer.on('connection',c=>{
+  c.on('open',()=>{peerConns.add(c);c.send(stateMsg());updRoomUI();toast('Host phone connected')});
+  c.on('data',onMsg);
+  const gone=()=>{if(peerConns.delete(c)){updRoomUI();toast('Host phone disconnected')}};
+  c.on('close',gone);c.on('error',gone);
+ });
+ peer.on('disconnected',()=>{setTimeout(()=>{try{if(peer&&!peer.destroyed)peer.reconnect()}catch(e){}},2000)});
+ peer.on('error',err=>{
+  const t=err&&err.type;
+  if(t==='unavailable-id'){
+   /* usually our own old connection still closing after a reload: retry the same code a few times */
+   if(++idTries<=4){setLink('wait');setTimeout(openBoardPeer,3000)}
+   else{idTries=0;roomCodeNow=newCode();try{localStorage.setItem('survey-says-room',roomCodeNow)}catch(e){}showQR();openBoardPeer()}
+  }else if(t==='network'||t==='server-error'||t==='socket-error'||t==='socket-closed'||t==='browser-incompatible'){
+   setLink('off','Room connection lost. Retrying… If it keeps failing, press H, choose Menu and use Screen only.');setTimeout(openBoardPeer,5000);
+  }
+ });
+}
+function showQR(){
+ const box=$('qr');box.hidden=true;box.innerHTML='';
+ if(!location.protocol.startsWith('http')||!roomCodeNow)return;
+ const url=location.href.split('#')[0]+'#phone-'+roomCodeNow;
+ const draw=()=>{try{new QRCode(box,{text:url,width:256,height:256,correctLevel:QRCode.CorrectLevel.M});box.hidden=false}catch(e){}};
+ if(window.QRCode)return draw();
+ const sc=document.createElement('script');sc.src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';sc.onload=draw;document.head.appendChild(sc);
+}
+
+let phoneConn=null,phoneRetry=null;
+async function startPhone(){
+ setLink('wait');
+ try{await loadPeer()}catch(e){setLink('off','Can’t reach the connection service. Check your phone’s internet.');return}
+ peer=new Peer();
+ peer.on('open',connectPhone);
+ peer.on('disconnected',()=>{setTimeout(()=>{try{if(peer&&!peer.destroyed)peer.reconnect()}catch(e){}},2000)});
+ peer.on('error',err=>{
+  const t=err&&err.type;
+  if(t==='peer-unavailable')setLink('off',`No big screen found with code ${ROOMCODE}. Check the code on the screen. Retrying…`);
+  else setLink('off','Connection problem. Retrying…');
+  schedulePhoneRetry();
+ });
+}
+function schedulePhoneRetry(){if(phoneRetry)return;phoneRetry=setTimeout(()=>{phoneRetry=null;if(peer&&peer.open)connectPhone();else{try{peer&&peer.reconnect()}catch(e){}}},3000)}
+function connectPhone(){
+ if(phoneConn&&phoneConn.open)return;
+ const c=peer.connect(PREFIX+ROOMCODE,{reliable:true});phoneConn=c;
+ c.on('open',()=>{peerConns.clear();peerConns.add(c);c.send({type:'hello',s:S,at:Date.now()});setLink('live');toast('Connected to the big screen')});
+ c.on('data',onMsg);
+ const gone=()=>{peerConns.delete(c);if(phoneConn===c){phoneConn=null;setLink('off','Lost the big screen. Reconnecting…');schedulePhoneRetry()}};
+ c.on('close',gone);c.on('error',gone);
+}
+
+function openHostWindow(){
+ popup=window.open(location.href.split('#')[0]+'#hostwin','survey-says-host','width=1200,height=860');
+ if(!popup)toast('Your browser blocked the window. Allow pop-ups for this file, or press H instead.');
+}
+function startHostWin(){
+ setLink('wait');
+ const hi=()=>send({type:'hello',s:S,at:Date.now()});
+ hi();let n=0;const iv=setInterval(()=>{if(link.state==='live'||++n>10)return clearInterval(iv);hi()},1000);
+}
+
+/* ---------- sound ---------- */
+const SKEY='survey-says-sound-'+ROLE;
+const FX={reveal:'Answer reveal ding',strike:'Strike buzzer',tick:'Countdown ticks (last 5s)',timeup:'Time-up horn',fanfare:'Fanfares and applause'};
+const CAT={ding:'reveal',buzz:'strike',dup:'strike',tick:'tick',timeup:'timeup',award:'fanfare',party:'fanfare',intro:'fanfare'};
+let snd=(()=>{try{const s=JSON.parse(localStorage.getItem(SKEY));if(s)return s}catch(e){}return{on:MODE!=='host',vol:.7,fx:{reveal:true,strike:true,tick:true,timeup:true,fanfare:true}}})();
+function saveSnd(){try{localStorage.setItem(SKEY,JSON.stringify(snd))}catch(e){}}
+let ac=null,mg=null;
+function audio(){if(!ac){try{ac=new(window.AudioContext||window.webkitAudioContext)();mg=ac.createGain();mg.connect(ac.destination)}catch(e){return null}}if(ac.state==='suspended')ac.resume().then(updChip,()=>{});mg.gain.value=snd.vol;return ac}
+['pointerdown','keydown'].forEach(ev=>document.addEventListener(ev,()=>{audio();setTimeout(updChip,60)}));
+function tone(f,t,d,type='sine',g=.3,f2){const o=ac.createOscillator(),gn=ac.createGain();o.type=type;o.frequency.setValueAtTime(f,t);if(f2)o.frequency.exponentialRampToValueAtTime(f2,t+d);gn.gain.setValueAtTime(.0001,t);gn.gain.exponentialRampToValueAtTime(g,t+.012);gn.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(gn).connect(mg);o.start(t);o.stop(t+d+.05)}
+function noise(t,d,g=.2,freq=2200){const len=Math.ceil(ac.sampleRate*d),buf=ac.createBuffer(1,len,ac.sampleRate),ch=buf.getChannelData(0);for(let i=0;i<len;i++)ch[i]=Math.random()*2-1;const s=ac.createBufferSource(),f=ac.createBiquadFilter(),gn=ac.createGain();s.buffer=buf;f.type='bandpass';f.frequency.value=freq;f.Q.value=.8;gn.gain.setValueAtTime(g,t);gn.gain.exponentialRampToValueAtTime(.0001,t+d);s.connect(f).connect(gn).connect(mg);s.start(t)}
+function applause(t,d){for(let i=0;i<90;i++){noise(t+Math.random()*d*(1-i/140),.05+Math.random()*.05,.12+Math.random()*.15,1500+Math.random()*2500)}}
+const SOUNDS={
+ ding(t){tone(1318,t,1.1,'sine',.45);tone(2637,t,.6,'sine',.12);tone(1975,t,.8,'triangle',.08)},
+ buzz(t){tone(98,t,.95,'sawtooth',.28);tone(104,t,.95,'sawtooth',.28);tone(49,t,.95,'square',.12)},
+ dup(t){tone(140,t,.22,'sawtooth',.25);tone(140,t+.3,.22,'sawtooth',.25)},
+ tick(t){tone(1250,t,.07,'square',.12)},
+ timeup(t){tone(220,t,1.4,'sawtooth',.25);tone(233,t,1.4,'sawtooth',.25);tone(110,t,1.4,'square',.12)},
+ award(t){[523,659,784,1047].forEach((f,i)=>tone(f,t+i*.11,i===3?.9:.2,'triangle',.3));tone(1047,t+.33,.9,'square',.06)},
+ intro(t){[392,523,659,784,659,784,1047].forEach((f,i)=>tone(f,t+i*.12,i===6?1:.16,'square',.12))},
+ party(t){SOUNDS.award(t);[784,988,1175,1568].forEach((f,i)=>tone(f,t+.6+i*.1,i===3?1.2:.2,'triangle',.25));applause(t+.3,2.6)}
+};
+function play(name){if(!snd.on||!snd.fx[CAT[name]])return;const a=audio();if(!a||a.state!=='running')return;mg.gain.value=snd.vol;try{SOUNDS[name](a.currentTime+.02)}catch(e){}}
+function updChip(){const c=document.getElementById('soundChip');c.hidden=!((ROLE==='board'||ROLE==='single')&&snd.on&&(!ac||ac.state!=='running'))}
+
+/* ---------- helpers ---------- */
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const R=()=>S.idx>=0&&S.idx<10;
+function bankOf(i){const r=S.rounds[i],rs=S.rs[i];return rs.rev.reduce((a,v,k)=>a+(v===1?(+r.answers[k][1]||0):0),0)*r.mult}
+function fmTotal(){return S.fm.rows.reduce((a,r)=>a+(r.r1?(+r.p1||0):0)+(r.r2?(+r.p2||0):0),0)}
+function timeLeft(){const t=S.timer;return t.endAt?Math.max(0,(t.endAt-Date.now())/1000):t.rem}
+const fmt=s=>s>=60?Math.floor(s/60)+':'+String(s%60).padStart(2,'0'):String(s);
+let toastT;function toast(m){const t=$('toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2600)}
+
+/* ---------- actions ---------- */
+function goTo(i){snap();S.idx=i;S.phase='faceoff';S.control=null;S.showTake=false;const d=i===10?20:(S.timer.dur||15);S.timer={dur:d,endAt:null,rem:d};commit();if(i>=0)sfx('intro')}
+function step(dir){const list=S.quick?QUICK:FULL;const n=dir>0?list.find(x=>x>S.idx):[...list].reverse().find(x=>x<S.idx);if(n!==undefined)goTo(n)}
+function reveal(k){if(!R())return;const rs=S.rs[S.idx];if(k>=rs.rev.length)return;snap();if(rs.rev[k]){rs.rev[k]=0;commit();return}rs.rev[k]=rs.awarded===null?1:2;commit();sfx('ding')}
+function strike(count=true){if(!R())return;const rs=S.rs[S.idx];if(count&&rs.strikes>=3){toast('Already 3 strikes. Move to the steal.');return}snap();if(count)rs.strikes++;S.flash={n:count?rs.strikes:1,t:Date.now()};if(count&&rs.strikes===3&&S.control!==null&&S.phase==='play'){S.phase='steal';const d=15;S.timer={dur:d,endAt:Date.now()+d*1000,rem:d}}commit();sfx('buzz')}
+function clearStrikes(){if(!R())return;snap();S.rs[S.idx].strikes=0;commit()}
+function setPhase(p){snap();S.phase=p;if(p==='steal'){const d=15;S.timer={dur:d,endAt:Date.now()+d*1000,rem:d}}commit()}
+function award(t){if(!R())return;const rs=S.rs[S.idx];if(rs.awarded!==null){toast('This round was already awarded. Use Undo to change it.');return}const b=bankOf(S.idx);snap();rs.awarded=t;rs.award=b;S.teams[t].score+=b;S.timer.endAt=null;S.timer.rem=timeLeft();commit();sfx('award')}
+function toggleTimer(){snap();const t=S.timer;if(t.endAt){t.rem=Math.ceil(timeLeft());t.endAt=null}else{if(t.rem<=0)t.rem=t.dur;t.endAt=Date.now()+t.rem*1000}commit()}
+function resetTimer(){snap();S.timer={...S.timer,endAt:null,rem:S.timer.dur};commit()}
+function setTimer(s){s=Math.max(1,Math.min(600,Math.round(s)));snap();S.timer={dur:s,endAt:null,rem:s};commit()}
+function addTime(d){snap();const t=S.timer;if(t.endAt){t.endAt=Math.max(Date.now(),t.endAt+d*1000)}else{t.rem=Math.max(0,t.rem+d);if(t.rem>t.dur)t.dur=t.rem}commit()}
+function undo(){if(!hist.length){toast('Nothing to undo');return}const sq=S.seq;S=JSON.parse(hist.pop());S.seq=sq;commit();toast('Undone')}
+
+/* ---------- stage render ---------- */
+let boardSig='',seenFlash=null,seenParty=null;const shown=[null,null],animTok=[0,0];
+function setScore(i,val){const el=$('team'+i).querySelector('.tscore');if(shown[i]===null||matchMedia('(prefers-reduced-motion: reduce)').matches){shown[i]=val;el.textContent=val;return}if(shown[i]===val)return;const from=shown[i],tok=++animTok[i];shown[i]=val;const t0=performance.now();$('team'+i).classList.add('bump');const st=now=>{if(tok!==animTok[i])return;const p=Math.min(1,(now-t0)/900);el.textContent=Math.round(from+(val-from)*(1-Math.pow(1-p,3)));if(p<1)requestAnimationFrame(st);else setTimeout(()=>$('team'+i).classList.remove('bump'),250)};requestAnimationFrame(st)}
+function renderStage(){
+ const i=S.idx;
+ S.teams.forEach((t,k)=>{const el=$('team'+k);el.querySelector('.nm').textContent=t.name;setScore(k,t.score);el.classList.toggle('control',R()&&S.control===k&&S.rs[i].awarded===null)});
+ $('vsA').textContent=S.teams[0].name;$('vsB').textContent=S.teams[1].name;
+ $('titleScreen').hidden=i!==-1;$('roundScreen').hidden=!R();$('fmScreen').hidden=i!==10;
+ $('bankBox').hidden=i===-1;
+ if(i===-1)$('roundLabel').textContent='GET READY';
+ if(i===10){$('roundLabel').textContent='FINAL ROUND';$('bankLbl').textContent='TOTAL';$('bank').textContent=fmTotal()}
+ if(R()){
+  const r=S.rounds[i],rs=S.rs[i];
+  $('roundLabel').innerHTML=`ROUND ${i+1} OF 10${r.mult>1?`<span class="mult">×${r.mult} POINTS</span>`:''}`;
+  $('bankLbl').textContent=rs.awarded===null?'BANK':'AWARDED';$('bank').textContent=rs.awarded===null?bankOf(i):rs.award;
+  $('mission').innerHTML=`<em>${esc(r.tag)}</em> · We asked new government employees…`;
+  $('question').textContent=r.q;
+  const sig=i+'|'+JSON.stringify(r.answers);
+  if(sig!==boardSig){boardSig=sig;$('board').innerHTML=r.answers.map((a,k)=>`<div class="tile${a[0]?'':' empty'}" data-k="${k}"><div class="inner"><div class="face front"><span class="num">${k+1}</span></div><div class="face back"><span class="ans">${esc(a[0])}</span><span class="pts">${esc(a[1])}</span></div></div></div>`).join('')}
+  [...$('board').children].forEach((el,k)=>{el.classList.toggle('on',rs.rev[k]>0);el.classList.toggle('late',rs.rev[k]===2)});
+  const T=S.teams,ph=$('phase');ph.className='phase';
+  if(rs.awarded!==null){ph.textContent=`${rs.award} points to ${T[rs.awarded].name}`;ph.classList.add('won')}
+  else if(S.phase==='play'&&S.control!==null)ph.textContent=`${T[S.control].name} is playing`;
+  else if(S.phase==='steal'&&S.control!==null){ph.textContent=`${T[1-S.control].name}: steal!`;ph.classList.add('steal')}
+  else if(S.phase==='steal'){ph.textContent='Steal!';ph.classList.add('steal')}
+  else ph.textContent='Face-off';
+  [...$('strikes').children].forEach((x,k)=>x.classList.toggle('hit',k<rs.strikes));
+  const tk=S.showTake&&r.take.trim();$('takeaway').hidden=!tk;if(tk)$('takeText').textContent=r.take;
+ }
+ if(i===10){
+  const f=S.fm,lead=S.teams[0].score>=S.teams[1].score?0:1;
+  $('fmWho').textContent=`${S.teams[lead].name} · two players, five questions`;
+  [1,2].forEach(p=>{const col=$('fmCol'+p);col.innerHTML=`<h3>PLAYER ${p}</h3>`+f.rows.map(r=>{const on=r['r'+p],cov=p===1&&f.hide1;return`<div class="fmcell${on&&!cov?' on':''}${cov&&r.a1?' covered':''}"><span class="ans">${on?esc(r['a'+p]):''}</span><span class="pts">${on?esc(+r['p'+p]||0):''}</span></div>`}).join('')});
+  const tot=fmTotal();$('fmTotal').textContent=tot;$('goal').classList.toggle('win',tot>=200);$('goal').querySelector('b').style.width=Math.min(100,tot/2)+'%';
+ }
+ if(S.flash.t!==seenFlash){const first=seenFlash===null;seenFlash=S.flash.t;if(!first)showX(S.flash.n)}
+ if(S.party!==seenParty){const first=seenParty===null;seenParty=S.party;if(!first)confetti()}
+}
+let xT;function showX(n){const o=$('xOverlay');o.innerHTML='<span>X</span>'.repeat(Math.max(1,Math.min(3,n)));o.hidden=false;clearTimeout(xT);xT=setTimeout(()=>o.hidden=true,1400)}
+
+function confetti(){const c=$('confetti'),x=c.getContext('2d');if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;const st=$('stage');c.width=st.clientWidth;c.height=st.clientHeight;c.style.top=st.scrollTop+'px';const cols=['#ffc83d','#25e0c4','#ff6f91','#ffffff','#7ea0ff'];const P=Array.from({length:220},()=>({x:Math.random()*c.width,y:-20-Math.random()*c.height*.5,vx:(Math.random()-.5)*4,vy:2+Math.random()*4,r:Math.random()*6.3,vr:(Math.random()-.5)*.3,w:8+Math.random()*8,h:4+Math.random()*6,c:cols[Math.floor(Math.random()*cols.length)]}));const t0=performance.now();(function fr(now){x.clearRect(0,0,c.width,c.height);P.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.04;p.r+=p.vr;x.save();x.translate(p.x,p.y);x.rotate(p.r);x.fillStyle=p.c;x.fillRect(-p.w/2,-p.h/2,p.w,p.h);x.restore()});if(now-t0<5000)requestAnimationFrame(fr);else x.clearRect(0,0,c.width,c.height)})(t0)}
+
+/* ---------- host render ---------- */
+const host=$('host');
+function kb(k){return MODE==='display'?'':`<kbd>${k}</kbd>`}
+function renderHost(){
+ if(!CTRL)return;
+ const ae=document.activeElement,fid=ae&&host.contains(ae)?ae.id:null,sel=fid&&ae.selectionStart!=null?[ae.selectionStart,ae.selectionEnd]:null;
+ const i=S.idx,T=S.teams;
+ const opts=[[-1,'Title screen'],...ROUNDS.map((r,k)=>[k,`Round ${k+1}${S.rounds[k].mult>1?' (×'+S.rounds[k].mult+')':''}${S.quick&&!QUICK.includes(k)?' · skipped in 15-min set':''}`]),[10,'Fast Money']].map(([v,l])=>`<option value="${v}"${v===i?' selected':''}>${l}</option>`).join('');
+ let nav=`<section class="card live"><h3>On screen now <span class="row"><button class="btn sm" data-act="prev">◀ Prev ${kb('←')}</button><button class="btn sm gold" data-act="next">Next ▶ ${kb('→')}</button></span></h3>
+  <select id="roundSel" data-ch="round" aria-label="Choose round">${opts}</select>
+  <label class="chk"><input type="checkbox" id="quickChk" data-ch="quick"${S.quick?' checked':''}> 15-minute set: rounds 2, 5, 7 and 10, then Fast Money</label></section>`;
+ let main='';
+ if(i===-1){main=`<section class="card"><h3>Before you start</h3><p class="note">The board shows the title and both team names. When the room is ready, start round 1. Scores shown on the board are estimates from your script; use <b>Edit board</b> in each round to swap in real survey results.</p><div class="row"><button class="btn big gold" data-act="go" data-arg="${S.quick?1:0}">Start ${S.quick?'round 2':'round 1'} ▶</button></div></section>`}
+ if(R()){
+  const r=S.rounds[i],rs=S.rs[i],b=bankOf(i);
+  const rows=r.answers.map((a,k)=>{const st=rs.rev[k];return editMode?`<div class="arow"><kbd>${k+1}</kbd><input type="text" id="at${k}" data-ch="aText" data-arg="${k}" value="${esc(a[0])}" aria-label="Answer ${k+1}"><input type="number" id="ap${k}" data-ch="aPts" data-arg="${k}" value="${esc(a[1])}" aria-label="Points ${k+1}"><span></span></div>`
+   :`<div class="arow${st?' on':''}${st===2?' late':''}"><kbd>${k+1}</kbd><span class="atext">${esc(a[0])||'<em class="note">empty</em>'}</span><span class="apts">${esc(a[1])}</span><button class="btn sm${st?'':' gold'}" data-act="reveal" data-arg="${k}">${st?'Hide':'Reveal'}</button></div>`}).join('');
+  main+=`<section class="card live"><h3>Round ${i+1} · ${esc(r.tag)}${r.mult>1?' · ×'+r.mult+' points':''}<button class="btn sm${editMode?' sel':''}" data-act="edit">${editMode?'Done editing':'Edit board'}</button></h3>
+   ${editMode?`<input type="text" id="qText" data-ch="qText" value="${esc(r.q)}" aria-label="Question">`:`<div class="hq">${esc(r.q)}</div>`}
+   ${r.note&&!editMode?`<p class="note warn">Host note: ${esc(r.note)}</p>`:''}
+   <div class="seg" role="group" aria-label="Phase">
+    <button class="btn sm${S.phase==='faceoff'?' sel':''}" data-act="phase" data-arg="faceoff">Face-off</button>
+    <button class="btn sm${S.phase==='play'?' sel':''}" data-act="phase" data-arg="play">Play</button>
+    <button class="btn sm${S.phase==='steal'?' sel':''}" data-act="phase" data-arg="steal">Steal + 15s ${kb('S')}</button></div>
+   <div class="row"><span class="note">In control:</span><button class="btn sm t0${S.control===0?' sel':''}" data-act="control" data-arg="0">${esc(T[0].name)}</button><button class="btn sm t1${S.control===1?' sel':''}" data-act="control" data-arg="1">${esc(T[1].name)}</button></div>
+   ${rows}
+   ${editMode?`<label class="note" for="nText">Host note (only you see it)</label><input type="text" id="nText" data-ch="nText" value="${esc(r.note)}">`:''}
+   <p class="note">Survey totals: ${r.answers.reduce((a,x)=>a+(+x[1]||0),0)} of 100. Accept close answers and decide fast.</p></section>
+  <section class="card"><h3>Strikes and points</h3>
+   <div class="row"><div class="dots">${[0,1,2].map(k=>`<i class="${k<rs.strikes?'hit':''}">X</i>`).join('')}</div>
+    <button class="btn red" data-act="strike">Strike ${kb('X')}</button><button class="btn" data-act="buzz">Buzz only ${kb('Z')}</button><button class="btn sm" data-act="clearStrikes">Clear</button></div>
+   <p class="note">Buzz only flashes one X without counting it, for a wrong face-off answer. The third strike moves to the steal and starts 15 seconds.</p>
+   <div class="bankline"><span class="note">${rs.awarded===null?'Bank':'Awarded'}</span><b>${rs.awarded===null?b:rs.award}</b>${r.mult>1?`<span class="note">includes ×${r.mult}</span>`:''}</div>
+   <div class="row"><button class="btn t0" data-act="award" data-arg="0"${rs.awarded!==null?' disabled':''}>Award to ${esc(T[0].name)} ${kb('A')}</button><button class="btn t1" data-act="award" data-arg="1"${rs.awarded!==null?' disabled':''}>Award to ${esc(T[1].name)} ${kb('L')}</button></div>
+   ${rs.awarded!==null?`<p class="note ok">${rs.award} points went to ${esc(T[rs.awarded].name)}. Answers you reveal now show in grey and don't score.</p>`:''}</section>
+  <section class="card"><h3>Teaching moment <button class="btn sm${S.showTake?' sel':''}" data-act="take"${r.take.trim()?'':' disabled'}>${S.showTake?'Hide from screen':'Show on screen'} ${kb('T')}</button></h3>
+   ${editMode||!r.take.trim()?`<textarea id="tText" data-ch="tText" placeholder="Your script has no takeaway for this round. Type one to show it on the board." aria-label="Takeaway">${esc(r.take)}</textarea>`:`<p class="hq" style="font-size:17px">${esc(r.take)}</p>`}</section>`;
+ }
+ if(i===10){
+  const f=S.fm,tot=fmTotal();
+  main+=`<section class="card live"><h3>Fast Money <span class="row"><button class="btn sm${f.hide1?' sel':''}" data-act="hide1">${f.hide1?'Uncover Player 1':'Cover Player 1'}</button></span></h3>
+   <p class="note">Player 1 gets 20 seconds, Player 2 gets 25. Cover Player 1’s answers while Player 2 plays. Type each answer and its points, then show it. 0 points plays the buzzer.</p>
+   <div class="row"><button class="btn" data-act="tset" data-arg="20">Player 1: 20s</button><button class="btn" data-act="tset" data-arg="25">Player 2: 25s</button><button class="btn red" data-act="dup">Duplicate answer buzz</button></div>
+   ${f.rows.map((r,k)=>`<div class="fmrow"><div class="q">${k+1}. ${esc(r.q)}</div>${[1,2].map(p=>`<div class="pl"><span>P${p}</span><input type="text" id="fa${p}${k}" data-ch="fmA" data-p="${p}" data-arg="${k}" value="${esc(r['a'+p])}" placeholder="Answer" aria-label="Player ${p} answer ${k+1}"><input type="number" id="fp${p}${k}" data-ch="fmP" data-p="${p}" data-arg="${k}" value="${esc(r['p'+p])}" placeholder="pts" aria-label="Player ${p} points ${k+1}"><button class="btn sm${r['r'+p]?'':' gold'}" data-act="fmShow" data-p="${p}" data-arg="${k}">${r['r'+p]?'Hide':'Show'}</button></div>`).join('')}</div>`).join('')}
+   <div class="bankline"><span class="note">Combined</span><b>${tot}</b><span class="note${tot>=200?' ok':''}">${tot>=200?'They win the grand prize!':(200-tot)+' to go'}</span></div>
+   <div class="row"><button class="btn big gold" data-act="party">Celebrate 🎉</button></div></section>`;
+ }
+ const tL=timeLeft();
+ const timer=`<section class="card"><h3>Timer <span class="note" id="hTimerState"></span></h3>
+  <div class="row" style="justify-content:space-between"><span class="htimer" id="hTimer">${fmt(Math.ceil(tL))}</span>
+  <span class="row"><button class="btn big gold" id="hTimerBtn" data-act="ttoggle">Start ${kb('Space')}</button><button class="btn" data-act="treset">Reset ${kb('R')}</button></span></div>
+  <div class="row"><button class="btn sm" data-act="tadd" data-arg="-5">−5s</button><button class="btn sm" data-act="tadd" data-arg="5">+5s</button>${[10,15,20,25,30,45,60,90].map(s=>`<button class="btn sm${S.timer.dur===s?' sel':''}" data-act="tset" data-arg="${s}">${s}s</button>`).join('')}</div>
+  <div class="row"><label class="note" for="customSec">Custom seconds</label><input type="number" id="customSec" min="1" max="600" value="${S.timer.dur}"><button class="btn sm" data-act="tcustom">Set</button></div></section>`;
+ const scores=`<section class="card"><h3>Teams and scores</h3>${T.map((t,k)=>`<div class="scoreline"><input type="text" id="tn${k}" data-ch="tName" data-arg="${k}" value="${esc(t.name)}" aria-label="Team ${k+1} name"><input type="number" id="ts${k}" data-ch="tScore" data-arg="${k}" value="${t.score}" aria-label="${esc(t.name)} score"></div><div class="row">${[-10,-5,5,10].map(d=>`<button class="btn sm t${k}" data-act="score" data-p="${k}" data-arg="${d}">${d>0?'+':''}${d}</button>`).join('')}</div>`).join('')}</section>`;
+ const sound=`<section class="card"><h3>Sound on this screen <button class="btn sm${snd.on?' sel':''}" data-act="mute">${snd.on?'On':'Off'} ${kb('M')}</button></h3>
+  <label class="note" for="vol">Volume</label><input type="range" id="vol" data-ch="vol" min="0" max="1" step="0.05" value="${snd.vol}">
+  ${Object.entries(FX).map(([k,l])=>`<div class="row" style="justify-content:space-between"><label class="chk"><input type="checkbox" id="fx-${k}" data-ch="fx" data-arg="${k}"${snd.fx[k]?' checked':''}> ${l}</label><button class="btn sm" data-act="test" data-arg="${k}" aria-label="Test ${l}">▶ Test</button></div>`).join('')}
+  <p class="note">These settings are for this device only. Sound normally plays on the big screen; turn it on here only if this device is connected to the room speakers.</p></section>`;
+ const screens={
+  phone:`<section class="card"><h3>Connection</h3><p class="note">You’re controlling room <b>${ROOMCODE}</b>. Sound plays on the big screen. If the connection drops, this phone reconnects by itself.</p><p class="note"><b>If the room won’t work:</b> on the big-screen computer press <kbd>H</kbd>, choose <b>Menu</b>, then <b>Screen only</b>. The scores carry over.</p></section>`,
+  board:`<section class="card"><h3>Room ${roomCodeNow||''}</h3><p class="note">These are backup controls on the big screen, and the room can see them while this panel is open. Press <kbd>H</kbd> to hide it.</p><div class="row"><button class="btn" data-act="fs">Fullscreen ${kb('F')}</button><button class="btn" data-act="newcode">New room code</button></div></section>`,
+  single:`<section class="card"><h3>Screens</h3><p class="note">Set your laptop to <b>extended display</b>, not mirrored. Put this window on the projector, then open the host window and keep it on your laptop.</p><div class="row"><button class="btn gold" data-act="hostwin">Open host window</button><button class="btn" data-act="fs">Fullscreen ${kb('F')}</button></div><p class="note">Or keep one window and press <kbd>H</kbd> to slide this panel in and out.</p></section>`,
+  hostwin:`<section class="card"><h3>Screens</h3><p class="note">Keep this window on your laptop. The board window on the projector follows every click. Sound plays from the board window.</p></section>`
+ }[ROLE]||'';
+ const tips=`<section class="card"><h3>Host tips</h3><ul class="tips">
+  <li><b>Face-off:</b> first to buzz answers. If it isn’t the top answer, the other player tries. Higher answer chooses to play or pass.</li>
+  <li><b>Play:</b> a line of 5 answers one at a time. Three strikes ends their turn.</li>
+  <li><b>Steal:</b> 15 seconds to huddle, the captain gives one answer. On the board means they take the whole bank.</li>
+  <li><b>Accept close answers.</b> “Who approves it?” and “Is it signed off?” are the same answer.</li>
+  <li><b>Timing:</b> all 10 rounds plus Fast Money take about 40 minutes.</li></ul>
+  ${S.seq===0?'':''}
+  <div class="keys"><kbd>1–6</kbd><span>Reveal or hide an answer</span><kbd>X / Z</kbd><span>Strike / buzz only</span><kbd>Space / R</kbd><span>Start-pause / reset timer</span><kbd>A / L</kbd><span>Award to left / right team</span><kbd>S / T</kbd><span>Steal / show takeaway</span><kbd>← →</kbd><span>Previous / next round</span><kbd>U</kbd><span>Undo last action</span><kbd>H / F / M</kbd><span>Panel / fullscreen / mute</span></div></section>
+  <section class="card"><h3>Start over</h3><p class="note">Clears scores, strikes and revealed answers. Your edited questions are kept.</p><div class="row"><button class="btn${resetArmed>Date.now()?' red':''}" data-act="reset">${resetArmed>Date.now()?'Click again to reset the game':'Reset game'}</button></div></section>`;
+ host.innerHTML=`<div class="hhead"><div><div class="eyebrow">${MODE==='combined'?'Host panel · the room can see this when it’s open':'Host screen · only you see this'}</div><h2>Survey Says control</h2></div>
+  <div class="row"><span class="conn" id="hConn"></span><button class="btn" data-act="undo"${hist.length?'':' disabled'}>↶ Undo ${kb('U')}</button>${MODE==='host'?`<button class="btn" data-act="preview">${document.body.classList.contains('nopreview')?'Show preview':'Hide preview'}</button>`:`<button class="btn" data-act="drawer">Hide panel ${kb('H')}</button>`}<button class="btn" data-act="menu">Menu</button></div></div>
+  <div class="hgrid"><div class="hcol">${nav}${main}</div><div class="hcol">${timer}${scores}${sound}${screens}${tips}</div></div>`;
+ updRoomUI();
+ if(fid){const el=$(fid);if(el){el.focus();if(sel&&el.setSelectionRange)try{el.setSelectionRange(sel[0],sel[1])}catch(e){}}}
+ lastHostSec=null;
+}
+
+host.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const a=b.dataset.act,g=b.dataset.arg,p=b.dataset.p;
+ switch(a){
+  case'prev':step(-1);break;case'next':step(1);break;case'go':goTo(+g);break;
+  case'reveal':reveal(+g);break;case'strike':strike(true);break;case'buzz':strike(false);break;case'clearStrikes':clearStrikes();break;
+  case'phase':setPhase(g);break;
+  case'control':snap();S.control=S.control===+g?null:+g;if(S.control!==null&&S.phase==='faceoff')S.phase='play';commit();break;
+  case'award':award(+g);break;
+  case'take':snap();S.showTake=!S.showTake;commit();break;
+  case'edit':editMode=!editMode;renderHost();break;
+  case'ttoggle':toggleTimer();break;case'treset':resetTimer();break;case'tset':setTimer(+g);break;case'tadd':addTime(+g);break;
+  case'tcustom':{const v=+$('customSec').value;if(!(v>=1&&v<=600)){toast('Enter between 1 and 600 seconds');return}setTimer(v);break}
+  case'score':snap();S.teams[+p].score=Math.max(0,S.teams[+p].score+(+g));commit();break;
+  case'undo':undo();break;
+  case'hide1':snap();S.fm.hide1=!S.fm.hide1;commit();break;
+  case'dup':sfx('dup');break;
+  case'fmShow':{const r=S.fm.rows[+g];snap();r['r'+p]=!r['r'+p];commit();if(r['r'+p])sfx((+r['p'+p]||0)>0?'ding':'buzz');break}
+  case'party':snap();S.party=Date.now();commit();sfx('party');break;
+  case'mute':snd.on=!snd.on;saveSnd();audio();updChip();renderHost();break;
+  case'test':audio();setTimeout(()=>{const was=snd.on;snd.on=true;const m={reveal:'ding',strike:'buzz',tick:'tick',timeup:'timeup',fanfare:'award'}[g];const f=snd.fx[g];snd.fx[g]=true;play(m);snd.fx[g]=f;snd.on=was},50);break;
+  case'fs':fullscreen();break;
+  case'preview':{const on=document.body.classList.toggle('nopreview');try{localStorage.setItem('feud-nopreview-'+ROLE,on?'1':'0')}catch(e){}renderHost();break}
+  case'drawer':toggleDrawer(false);break;
+  case'menu':location.hash='menu';break;
+  case'hostwin':openHostWindow();break;
+  case'newcode':roomCodeNow=newCode();try{localStorage.setItem('survey-says-room',roomCodeNow)}catch(e){}idTries=0;peerConns.forEach(c=>{try{c.close()}catch(e){}});peerConns.clear();showQR();openBoardPeer();updRoomUI();renderHost();toast('New code: '+roomCodeNow);break;
+  case'reset':if(resetArmed>Date.now()){snap();const keep=S.rounds,sq=S.seq;S=newState();S.seq=sq;S.rounds=keep;S.rs=keep.map(freshRS);resetArmed=0;commit();toast('Game reset. Undo brings it back.')}else{resetArmed=Date.now()+4000;renderHost();setTimeout(()=>{if(resetArmed&&resetArmed<=Date.now()){resetArmed=0;renderHost()}},4100)}break;
+ }});
+host.addEventListener('change',e=>{const el=e.target,c=el.dataset.ch;if(!c)return;const g=el.dataset.arg;
+ const r=R()?S.rounds[S.idx]:null;
+ switch(c){
+  case'round':goTo(+el.value);break;
+  case'quick':snap();S.quick=el.checked;commit();break;
+  case'tName':snap();S.teams[+g].name=el.value.trim()||('Team '+(+g+1));commit();break;
+  case'tScore':snap();S.teams[+g].score=Math.max(0,Math.round(+el.value||0));commit();break;
+  case'aText':snap();r.answers[+g][0]=el.value;commit();break;
+  case'aPts':snap();r.answers[+g][1]=Math.max(0,Math.round(+el.value||0));commit();break;
+  case'qText':snap();r.q=el.value;commit();break;
+  case'tText':snap();r.take=el.value;commit();break;
+  case'nText':snap();r.note=el.value;commit();break;
+  case'fmA':snap();S.fm.rows[+g]['a'+el.dataset.p]=el.value;commit();break;
+  case'fmP':snap();S.fm.rows[+g]['p'+el.dataset.p]=el.value===''?'':Math.max(0,Math.round(+el.value||0));commit();break;
+  case'vol':snd.vol=+el.value;saveSnd();if(mg)mg.gain.value=snd.vol;break;
+  case'fx':snd.fx[g]=el.checked;saveSnd();break;
+ }});
+
+/* ---------- chrome ---------- */
+function fullscreen(){const d=document;if(d.fullscreenElement){d.exitFullscreen?.().catch(()=>{})}else{d.documentElement.requestFullscreen?.().catch(()=>toast('Fullscreen isn’t available here. Use your browser’s fullscreen instead.'))}}
+$('fsBtn').onclick=fullscreen;
+function toggleDrawer(force){if(MODE!=='combined')return;document.body.classList.toggle('drawer-open',force);if(document.body.classList.contains('drawer-open'))renderHost()}
+$('soundChip').onclick=()=>{audio();setTimeout(updChip,80)};
+let idleT;function wake(){$('tools').classList.remove('idle');clearTimeout(idleT);idleT=setTimeout(()=>$('tools').classList.add('idle'),3000)}
+document.addEventListener('pointermove',wake);wake();
+
+document.addEventListener('keydown',e=>{
+ if(ROLE==='menu')return;
+ if(!e.ctrlKey&&!e.metaKey&&!e.altKey&&!(e.target&&/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))){
+  if(e.key==='h'||e.key==='H'){toggleDrawer();return}
+  if(e.key==='f'||e.key==='F'){fullscreen();return}
+  if(ROLE==='board'&&!document.body.classList.contains('drawer-open'))return;
+ }
+ const t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'))return;
+ if(e.metaKey||e.altKey)return;
+ if(e.ctrlKey){if(e.key==='z'){e.preventDefault();undo()}return}
+ const k=e.key;
+ if(k>='1'&&k<='6'){reveal(+k-1);return}
+ switch(k.toLowerCase()){
+  case'x':strike(true);break;case'z':strike(false);break;
+  case' ':e.preventDefault();toggleTimer();break;case'r':resetTimer();break;
+  case'a':award(0);break;case'l':award(1);break;
+  case's':if(R())setPhase('steal');break;
+  case't':if(R()&&S.rounds[S.idx].take.trim()){snap();S.showTake=!S.showTake;commit()}break;
+  case'arrowright':step(1);break;case'arrowleft':step(-1);break;
+  case'u':undo();break;
+  case'm':snd.on=!snd.on;saveSnd();audio();updChip();renderHost();toast(snd.on?'Sound on':'Sound off');break;
+ }});
+
+/* ---------- timer loop ---------- */
+let lastSec=null,lastHostSec=null;
+function paintTimer(el,rem,sec,running){const d=S.timer.dur||1;el.querySelector('.t').textContent=fmt(sec);el.querySelector('.bar b').style.transform=`scaleX(${Math.max(0,Math.min(1,rem/d))})`;el.classList.toggle('running',running&&sec>5);el.classList.toggle('low',running&&sec<=5&&rem>0);el.classList.toggle('done',rem<=0);el.classList.toggle('idle',!running&&rem>0)}
+function loop(){
+ const rem=timeLeft(),running=!!S.timer.endAt,sec=Math.ceil(rem);
+ paintTimer($('timer'),rem,sec,running);paintTimer($('timer2'),rem,sec,running);
+ if(running){
+  if(lastSec!==null&&sec!==lastSec&&sec<=5&&sec>0)play('tick');
+  if(rem<=0&&firedFor!==S.timer.endAt){firedFor=S.timer.endAt;play('timeup');if(ROLE!=='board'&&ROLE!=='menu'){S.timer={...S.timer,endAt:null,rem:0};commit()}}
+ }
+ lastSec=sec;
+ if(CTRL){const h=$('hTimer');if(h&&sec!==lastHostSec){lastHostSec=sec;h.textContent=fmt(sec);h.classList.toggle('low',sec<=5);}
+  const b=$('hTimerBtn');if(b){const lbl=running?'Pause':(rem<=0?'Restart':'Start');if(b.dataset.l!==lbl){b.dataset.l=lbl;b.innerHTML=lbl+' '+kb('Space')}}
+  const st=$('hTimerState');if(st){const s=running?'running':rem<=0?'time’s up':'paused';if(st.textContent!==s)st.textContent=s}}
+ requestAnimationFrame(loop);
+}
+
+function renderAll(){renderStage();if(CTRL&&(MODE==='host'||document.body.classList.contains('drawer-open')))renderHost();if(ROLE==='board')updRoomUI()}
+window.addEventListener('hashchange',()=>location.reload());
+/* ---------- start ---------- */
+function go(h){location.hash=h}
+$('goBoard').onclick=()=>go('board');
+$('goSingle').onclick=()=>go('single');
+$('joinForm').addEventListener('submit',e=>{e.preventDefault();const v=$('joinCode').value.trim().toUpperCase();if(!/^[A-Z]{4}$/.test(v)){const er=$('joinErr');er.hidden=false;er.textContent='Enter the 4 letters shown on the big screen, for example KQRT.';$('joinCode').focus();return}go('phone-'+v)});
+$('joinCode').addEventListener('input',e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-Z]/g,'');$('joinErr').hidden=true});
+if(ROLE==='menu'){$('menu').hidden=false}
+if(ROLE==='board')startBoard();
+if(ROLE==='phone')startPhone();
+if(ROLE==='hostwin')startHostWin();
+$('tools').hidden=ROLE==='menu';
+renderAll();updChip();updRoomUI();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
