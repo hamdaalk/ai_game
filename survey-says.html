@@ -270,9 +270,20 @@ label.chk{display:flex;gap:10px;align-items:center;cursor:pointer;font-weight:70
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
 }
+
+#languageBtn{position:fixed;top:8px;right:12px;z-index:100;background:var(--panel);min-height:40px}
+#stage{padding-top:56px} .menuin{padding-top:36px}
+.tools{flex-wrap:wrap;max-width:95%}.tools.idle{opacity:1}
+html[lang="ar"]{--f-display:Tahoma,'Segoe UI',sans-serif;--f-body:Tahoma,'Segoe UI',sans-serif}
+html[lang="ar"] .logo h1{line-height:1.3;font-weight:900}
+html[lang="ar"] .hq,html[lang="ar"] .note,html[lang="ar"] .opt{text-align:start}
+html[lang="ar"] .codein{direction:ltr}
+html[lang="ar"] .back{padding-left:0;padding-right:12px}
+@media(max-width:600px){.tools{position:sticky;bottom:4px;justify-content:center}.logo{margin-top:12px}.mode-host #host{padding-top:56px}}
 </style>
 </head>
 <body>
+<button id="languageBtn" class="chip" type="button" aria-label="Switch language">العربية</button>
 <div id="app">
   <main id="stage" aria-live="polite">
     <header class="scorebar">
@@ -324,6 +335,7 @@ label.chk{display:flex;gap:10px;align-items:center;cursor:pointer;font-weight:70
     <div class="tools" id="tools">
       <button class="chip sound" id="soundChip" hidden>🔊 Click to turn on sound</button>
       <div class="row board-actions" id="boardActions" hidden><button class="chip" data-game-act="continue">Continue</button><button class="chip" id="boardNewGame" data-game-act="newgame">New game</button></div>
+      <button class="chip" id="startBtn">Start game ▶</button><button class="chip" id="hostBtn">Host controls</button><button class="chip" id="menuBtn">Menu</button>
       <button class="chip" id="fsBtn" title="Fullscreen (F)">Fullscreen</button>
       <span class="chip warnchip" id="boardConn" hidden>Not connected to the host</span>
     </div>
@@ -597,7 +609,7 @@ function play(name){if(!snd.on||!snd.fx[CAT[name]])return;const a=audio();if(!a|
 function updChip(){const c=document.getElementById('soundChip');c.hidden=!((ROLE==='board'||ROLE==='single')&&snd.on&&(!ac||ac.state!=='running'))}
 
 /* ---------- helpers ---------- */
-const $=id=>document.getElementById(id);
+function $(id){return document.getElementById(id)}
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const R=()=>S.idx>=0&&S.idx<10;
 function bankOf(i){const r=S.rounds[i],rs=S.rs[i];return rs.rev.reduce((a,v,k)=>a+(v===1?(+r.answers[k][1]||0):0),0)*r.mult}
@@ -625,6 +637,7 @@ let boardSig='',seenFlash=null,seenParty=null;const shown=[null,null],animTok=[0
 function setScore(i,val){const el=$('team'+i).querySelector('.tscore');if(shown[i]===null||matchMedia('(prefers-reduced-motion: reduce)').matches){shown[i]=val;el.textContent=val;return}if(shown[i]===val)return;const from=shown[i],tok=++animTok[i];shown[i]=val;const t0=performance.now();$('team'+i).classList.add('bump');const st=now=>{if(tok!==animTok[i])return;const p=Math.min(1,(now-t0)/900);el.textContent=Math.round(from+(val-from)*(1-Math.pow(1-p,3)));if(p<1)requestAnimationFrame(st);else setTimeout(()=>$('team'+i).classList.remove('bump'),250)};requestAnimationFrame(st)}
 function renderStage(){
  const i=S.idx;
+ $('startBtn').hidden=i!==-1;
  S.teams.forEach((t,k)=>{const el=$('team'+k);el.querySelector('.nm').textContent=t.name;setScore(k,t.score);el.classList.toggle('control',R()&&S.control===k&&S.rs[i].awarded===null)});
  $('vsA').textContent=S.teams[0].name;$('vsB').textContent=S.teams[1].name;
  $('titleScreen').hidden=i!==-1;$('roundScreen').hidden=!R();$('fmScreen').hidden=i!==10;
@@ -791,6 +804,9 @@ host.addEventListener('change',e=>{const el=e.target,c=el.dataset.ch;if(!c)retur
 /* ---------- chrome ---------- */
 function fullscreen(){const d=document;if(d.fullscreenElement){d.exitFullscreen?.().catch(()=>{})}else{d.documentElement.requestFullscreen?.().catch(()=>toast('Fullscreen isn’t available here. Use your browser’s fullscreen instead.'))}}
 $('fsBtn').onclick=fullscreen;
+$('hostBtn').onclick=()=>toggleDrawer();
+$('menuBtn').onclick=()=>go('menu');
+$('startBtn').onclick=()=>{goTo(S.quick?1:0);toggleDrawer(true)};
 function toggleDrawer(force){if(MODE!=='combined')return;document.body.classList.toggle('drawer-open',force);if(document.body.classList.contains('drawer-open'))renderHost()}
 $('soundChip').onclick=()=>{audio();setTimeout(updChip,80)};
 let idleT;function wake(){$('tools').classList.remove('idle');clearTimeout(idleT);idleT=setTimeout(()=>$('tools').classList.add('idle'),3000)}
@@ -851,6 +867,33 @@ if(ROLE==='phone')startPhone();
 if(ROLE==='hostwin')startHostWin();
 $('tools').hidden=ROLE==='menu';updateBoardGameActions();
 renderAll();updChip();updRoomUI();requestAnimationFrame(loop);
+
+/* Display-only localization keeps scores, custom content and saved games intact. */
+const AR={"Name something AI is used for in government services.":"اذكر استخداماً للذكاء الاصطناعي في الخدمات الحكومية.","Answering public questions / chatbots":"الإجابة عن استفسارات الجمهور / روبوتات المحادثة","Guiding people through services (TAMM)":"إرشاد المتعاملين إلى الخدمات (تم)","Drafting documents":"صياغة المستندات","Summarising reports":"تلخيص التقارير","Analysing data":"تحليل البيانات","Translation":"الترجمة","The 2027 target is to embed AI in services, not just add a chatbot.":"الهدف لعام 2027 هو دمج الذكاء الاصطناعي في الخدمات، وليس مجرد إضافة روبوت محادثة.","Mission 01":"المهمة 01","Name one of the six parts of a strong AI prompt.":"اذكر أحد العناصر الستة لكتابة طلب فعّال للذكاء الاصطناعي.","Task":"المهمة","Role":"الدور","Format":"التنسيق","Context":"السياق","Constraints":"القيود","Verification":"التحقق","People forget the bottom two, and those are the ones that protect you.":"غالباً ما ينسى الناس العنصرين الأخيرين، وهما اللذان يحميانك.","Mission 02":"المهمة 02","Name a vague word people put in prompts.":"اذكر كلمة مبهمة يستخدمها الناس في طلباتهم.","Short":"قصير","Good":"جيد","Something":"شيء ما","Interesting":"مثير للاهتمام","Better / nice":"أفضل / جميل","People":"الناس","If a colleague would ask “what do you mean?”, so does the AI.":"إذا كان زميلك سيسأل «ماذا تقصد؟»، فالذكاء الاصطناعي يحتاج إلى التوضيح أيضاً.","Name something AI must keep unchanged when it rewrites a government guide.":"اذكر معلومة يجب ألا يغيّرها الذكاء الاصطناعي عند إعادة صياغة دليل حكومي.","Fees":"الرسوم","Deadlines":"المواعيد النهائية","Eligibility rules":"شروط الأهلية","Legal wording":"الصياغة القانونية","Dates and numbers":"التواريخ والأرقام","Contact details":"بيانات التواصل","Name something AI might make up.":"اذكر شيئاً قد يختلقه الذكاء الاصطناعي.","Sources / references":"المصادر / المراجع","Facts and statistics":"الحقائق والإحصاءات","Quotes":"الاقتباسات","People / witnesses":"الأشخاص / الشهود","Dates":"التواريخ","Laws or policies":"القوانين أو السياسات","Tell the story of the New Mexico lawyer and his invented witnesses.":"اروِ قصة المحامي في نيو مكسيكو والشهود الذين اختلقهم الذكاء الاصطناعي.","Mission 03":"المهمة 03","Name a way to check an AI answer before you use it.":"اذكر طريقة للتحقق من إجابة الذكاء الاصطناعي قبل استخدامها.","Compare with the original source":"مقارنتها بالمصدر الأصلي","Ask a colleague or manager":"سؤال زميل أو مدير","Check the citations":"التحقق من المراجع","Check the official website":"مراجعة الموقع الرسمي","Read it fully yourself":"قراءتها كاملة بنفسك","Ask the AI for its sources":"طلب المصادر من الذكاء الاصطناعي","Asking the AI to check itself is the lowest answer for a reason. Self-review isn’t independent checking.":"طلب مراجعة الذكاء الاصطناعي لإجابته حصل على أقل النقاط لسبب: المراجعة الذاتية ليست تحققاً مستقلاً.","Name information you’d think twice about pasting into an AI tool.":"اذكر معلومات تتردد في إدخالها إلى أداة ذكاء اصطناعي.","Personal data (names, ID numbers)":"البيانات الشخصية (الأسماء وأرقام الهوية)","Confidential documents":"المستندات السرية","Passwords":"كلمات المرور","Salary or financial info":"الرواتب أو المعلومات المالية","Health information":"المعلومات الصحية","Case files":"ملفات القضايا","Mission 04":"المهمة 04","Name a decision AI should NOT make on its own.":"اذكر قراراً يجب ألا يتخذه الذكاء الاصطناعي بمفرده.","Approving or rejecting applications":"قبول الطلبات أو رفضها","Hiring or firing":"التوظيف أو إنهاء الخدمة","Payments and fines":"المدفوعات والغرامات","Legal judgements":"الأحكام القانونية","Benefit eligibility":"أهلية الحصول على المزايا","Disciplinary action":"الإجراءات التأديبية","If rights, eligibility or money are affected, a person decides.":"إذا كان القرار يؤثر في الحقوق أو الأهلية أو المال، فالقرار للإنسان.","Name a task AI could help you with in your first week.":"اذكر مهمة قد يساعدك فيها الذكاء الاصطناعي في أسبوعك الأول.","Writing emails":"كتابة رسائل البريد الإلكتروني","Summarising documents":"تلخيص المستندات","Meeting notes and actions":"تدوين محاضر الاجتماعات والإجراءات","Building presentations":"إعداد العروض التقديمية","Brainstorming ideas":"توليد الأفكار","Mission 05":"المهمة 05","Name a question to ask before you use an AI result.":"اذكر سؤالاً ينبغي طرحه قبل استخدام نتيجة الذكاء الاصطناعي.","Is it accurate?":"هل هي دقيقة؟","Where’s the source?":"أين المصدر؟","Am I allowed to use this tool?":"هل يُسمح لي باستخدام هذه الأداة؟","Is the data OK to share?":"هل يجوز مشاركة هذه البيانات؟","Is it clear and fair?":"هل هي واضحة وعادلة؟","Who needs to approve it?":"من يجب أن يعتمدها؟","These answers group into the deck’s three checks: Permission, Proof, People.":"تندرج هذه الإجابات تحت ثلاثة محاور للتحقق: الإذن، والدليل، والأشخاص.","Playbook slide":"دليل العمل","SURVEY SAYS!":"الاستطلاع يقول!","SURVEY":"الاستطلاع","SAYS!":"يقول!","AI EDITION":"نسخة الذكاء الاصطناعي","How are you running the game today?":"كيف تريد تشغيل اللعبة اليوم؟","OPTION 1 · RECOMMENDED":"الخيار الأول · موصى به","Phone + big screen":"الهاتف والشاشة الكبيرة","Control the game from your phone while the room watches the big screen. Both devices need internet and this same game file.":"تحكّم في اللعبة من هاتفك بينما يشاهد الحضور الشاشة الكبيرة. يحتاج الجهازان إلى الإنترنت وفتح اللعبة نفسها.","On the computer connected to the projector":"على الحاسوب المتصل بجهاز العرض","This is the big screen ▶":"هذه الشاشة الكبيرة ▶","On your phone":"على هاتفك","Type the 4-letter room code shown on the big screen":"أدخل رمز الغرفة المكوّن من أربعة أحرف إنجليزية والظاهر على الشاشة الكبيرة","Continue game":"متابعة اللعبة","New game":"لعبة جديدة","OPTION 2 · BACKUP":"الخيار الثاني · احتياطي","Screen only":"شاشة واحدة","Everything runs on this one computer. No internet or phone needed, so use this if the room connection fails.":"تعمل اللعبة على هذا الحاسوب وحده دون هاتف أو إنترنت. استخدم هذا الخيار عند تعذّر الاتصال.","Start on this screen ▶":"ابدأ على هذه الشاشة ▶","Start game ▶":"ابدأ اللعبة ▶","Host controls":"لوحة تحكم المقدّم","Menu":"القائمة","Fullscreen":"ملء الشاشة","Team Verify":"فريق التحقق","Team Protect":"فريق الحماية","GET READY":"استعدوا","BANK":"رصيد الجولة","AWARDED":"النقاط الممنوحة","TOTAL":"المجموع","TIME":"الوقت","TAKEAWAY":"الخلاصة","FAST MONEY":"الجولة السريعة","Fast Money":"الجولة السريعة","FINAL ROUND":"الجولة الأخيرة","VS":"ضد","We asked":"سألنا","new government employees":"الموظفين الحكوميين الجدد","We asked new government employees…":"سألنا الموظفين الحكوميين الجدد…","Face-off":"المواجهة","Play":"اللعب","Steal!":"فرصة الاستحواذ!","Steal + 15s":"استحواذ + 15 ثانية","In control:":"الفريق المتحكم:","On screen now":"المعروض الآن","◀ Prev":"◀ السابق","Next ▶":"التالي ▶","Title screen":"شاشة البداية","Before you start":"قبل البدء","Start round 1 ▶":"ابدأ الجولة الأولى ▶","Start round 2 ▶":"ابدأ الجولة الثانية ▶","Survey Says control":"لوحة تحكم اللعبة","Host panel · the room can see this when it’s open":"لوحة المقدّم · يراها الحضور عند فتحها","Host screen · only you see this":"شاشة المقدّم · لا يراها غيرك","Hide panel":"إخفاء اللوحة","↶ Undo":"↶ تراجع","Edit board":"تعديل اللوحة","Done editing":"إنهاء التعديل","Strikes and points":"الأخطاء والنقاط","Strike":"خطأ","Buzz only":"صوت الخطأ فقط","Clear":"مسح","Bank":"رصيد الجولة","Awarded":"مُنحت النقاط","Teaching moment":"لحظة تعليمية","Hide from screen":"إخفاء من الشاشة","Show on screen":"عرض على الشاشة","Timer":"المؤقّت","Start":"ابدأ","Pause":"إيقاف مؤقت","Restart":"إعادة التشغيل","Reset":"إعادة الضبط","paused":"متوقف مؤقتاً","running":"يعمل","time’s up":"انتهى الوقت","Custom seconds":"مدة مخصصة بالثواني","Set":"تعيين","Teams and scores":"الفرق والنقاط","Sound on this screen":"الصوت على هذه الشاشة","On":"تشغيل","Off":"إيقاف","Volume":"مستوى الصوت","Screens":"الشاشات","Open host window":"فتح نافذة المقدّم","Host tips":"إرشادات للمقدّم","Start over":"البدء من جديد","Continue":"متابعة","Reconnect":"إعادة الاتصال","Show preview":"عرض المعاينة","Hide preview":"إخفاء المعاينة","Show":"إظهار","Hide":"إخفاء","Answer":"الإجابة","PLAYER 1":"اللاعب الأول","PLAYER 2":"اللاعب الثاني","Combined score":"مجموع النقاط","200 wins the grand prize":"٢٠٠ نقطة للفوز بالجائزة الكبرى","Combined":"المجموع","Celebrate 🎉":"احتفلوا 🎉","Screen only · works offline":"شاشة واحدة · يعمل دون إنترنت","Waiting for the host phone":"بانتظار اتصال هاتف المقدّم","Host phone connected":"هاتف المقدّم متصل","Not connected to the host":"غير متصل بالمقدّم","Host, join room":"انضم إلى الغرفة كمقدّم","LIVE PREVIEW · WHAT THE ROOM SEES":"معاينة مباشرة · ما يراه الحضور","🔊 Click to turn on sound":"🔊 اضغط لتشغيل الصوت","Name something you’d find in an AI prompt":"اذكر شيئاً يوجد في طلب موجّه للذكاء الاصطناعي","Name a reason AI gets things wrong":"اذكر سبباً لوقوع الذكاء الاصطناعي في الأخطاء","Name a word that describes a good AI answer":"اذكر كلمة تصف إجابة جيدة للذكاء الاصطناعي","Name a government service you’d like AI to make easier":"اذكر خدمة حكومية تريد أن يسهّلها الذكاء الاصطناعي","Name someone to ask when you’re not sure a tool is allowed":"من تسأل عندما لا تعرف إن كان استخدام الأداة مسموحاً؟"};
+let language='en';try{language=localStorage.getItem('survey-language')==='ar'?'ar':'en'}catch(e){}
+const originals=new WeakMap();
+function translateText(s){
+ if(AR[s])return AR[s];
+ return s.replace(/ROUND (\d+) OF 10/g,'الجولة $1 من 10').replace(/Round (\d+)/g,'الجولة $1').replace(/PLAYER (\d+)/g,'اللاعب $1').replace(/×(\d+) POINTS/g,'×$1 نقاط').replace(/Award to /g,'منح النقاط إلى ').replace(/Team Verify/g,'فريق التحقق').replace(/Team Protect/g,'فريق الحماية').replace(/ is playing/g,' يلعب الآن').replace(/points to/g,'نقطة إلى').replace(/: steal!/g,': فرصة الاستحواذ!');
+}
+function localize(){
+ observer.disconnect();
+ document.documentElement.lang=language;document.documentElement.dir=language==='ar'?'rtl':'ltr';
+ const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);let n;
+ while(n=walker.nextNode()){
+  if(n.parentElement.closest('script,style,textarea,input,#languageBtn,kbd'))continue;
+  const previous=originals.get(n);const source=previous&&n.nodeValue===previous.output?previous.source:n.nodeValue;
+  const trimmed=source.trim();const output=language==='ar'?source.replace(trimmed,translateText(trimmed)):source;
+  if(n.nodeValue!==output)n.nodeValue=output;originals.set(n,{source,output});
+ }
+ $('languageBtn').textContent=language==='ar'?'English':'العربية';
+ $('languageBtn').setAttribute('aria-label',language==='ar'?'Switch to English':'التبديل إلى العربية');
+ observer.observe(document.body,{childList:true,subtree:true,characterData:true});
+}
+const observer=new MutationObserver(localize);
+$('languageBtn').onclick=()=>{language=language==='en'?'ar':'en';try{localStorage.setItem('survey-language',language)}catch(e){}localize()};
+localize();
+
 </script>
 </body>
 </html>
