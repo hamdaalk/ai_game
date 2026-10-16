@@ -854,6 +854,45 @@ function loop(){
 
 function renderAll(){renderStage();if(CTRL&&(MODE==='host'||document.body.classList.contains('drawer-open')))renderHost();if(ROLE==='board')updRoomUI()}
 window.addEventListener('hashchange',()=>location.reload());
+/* ---------- reliable online room transport ----------
+   Both devices keep one secure WebSocket to this Render service. The server relays
+   messages by room code, avoiding WebRTC/NAT and third-party CDN failures. */
+let syncSocket=null,syncRetry=null;
+function send(m){
+ try{bc&&bc.postMessage(m)}catch(e){}
+ try{if(window.opener&&!window.opener.closed)window.opener.postMessage(m,'*')}catch(e){}
+ try{if(popup&&!popup.closed)popup.postMessage(m,'*')}catch(e){}
+ try{if(syncSocket&&syncSocket.readyState===WebSocket.OPEN)syncSocket.send(JSON.stringify(m))}catch(e){}
+}
+function openSync(room,role){
+ clearTimeout(syncRetry);try{if(syncSocket)syncSocket.onclose=null,syncSocket.close()}catch(e){}
+ const protocol=location.protocol==='https:'?'wss:':'ws:';
+ syncSocket=new WebSocket(protocol+'//'+location.host+'/sync');
+ syncSocket.onopen=()=>syncSocket.send(JSON.stringify({type:'join',room,role}));
+ syncSocket.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(_){return}
+  if(m.type==='joined'){
+   if(role==='phone'){
+    phoneConn={open:true,send:x=>send(x),close(){}};setLink('wait');send({type:'hello'});
+    if(phoneJoinAction==='new'){phoneJoinAction='continue';send({type:'newGameRequest'})}
+   }else setLink('wait');
+   return;
+  }
+  if(role==='board'&&m.type==='hello'){peerConns.clear();peerConns.add({open:true});setLink('live');toast('Host phone connected')}
+  if(role==='phone'&&m.type==='state'){setLink('live');toast('Connected to the big screen')}
+  onMsg(m);
+ };
+ syncSocket.onerror=()=>setLink('off','Connection failed. Check that both devices use the same game URL.');
+ syncSocket.onclose=()=>{phoneConn=null;peerConns.clear();setLink('off','Connection lost. Reconnecting…');syncRetry=setTimeout(()=>openSync(room,role),2500)};
+}
+function startBoard(){
+ setLink('wait');try{roomCodeNow=localStorage.getItem('survey-says-room')}catch(e){}
+ if(!roomCodeNow){roomCodeNow=newCode();try{localStorage.setItem('survey-says-room',roomCodeNow)}catch(e){}}
+ updRoomUI();showQR();openSync(roomCodeNow,'board');
+}
+function openBoardPeer(){openSync(roomCodeNow,'board')}
+function startPhone(){setLink('wait');openSync(ROOMCODE,'phone')}
+function connectPhone(){openSync(ROOMCODE,'phone')}
+function reconnectPhone(){clearTimeout(syncRetry);phoneConn=null;peerConns.clear();setLink('wait');openSync(ROOMCODE,'phone')}
 /* ---------- start ---------- */
 function go(h){location.hash=h}
 $('goBoard').onclick=()=>go('board');
