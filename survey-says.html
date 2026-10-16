@@ -336,7 +336,7 @@ label.chk{display:flex;gap:10px;align-items:center;cursor:pointer;font-weight:70
   <h2>How are you running the game today?</h2>
   <div class="opts">
     <section class="opt main"><span class="k">OPTION 1 · RECOMMENDED</span><h3>Phone + big screen</h3>
-      <p>Control the game from your phone while the room watches the big screen. Both devices need internet and this same game file.</p>
+      <p>Control the game from your phone while the room watches the big screen. Open this same website on both, and make sure both have internet.</p>
       <div class="sub"><b>On the computer connected to the projector</b><button class="btn big gold" id="goBoard">This is the big screen ▶</button></div>
       <div class="sub"><b>On your phone</b><label class="note" for="joinCode">Type the 4-letter room code shown on the big screen</label>
         <form class="row" id="joinForm"><input type="text" id="joinCode" class="codein" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD"><button class="btn big gold" type="submit">Join as host</button></form>
@@ -403,23 +403,25 @@ function send(m){
  try{if(window.opener&&!window.opener.closed)window.opener.postMessage(m,'*')}catch(e){}
  try{if(popup&&!popup.closed)popup.postMessage(m,'*')}catch(e){}
  peerConns.forEach(c=>{try{if(c.open)c.send(m)}catch(e){}});
+ if(relay)relaySend(m);
 }
 const seenSfx=new Set();
 function onMsg(m){
  if(!m||typeof m!=='object')return;
  if(ROLE==='hostwin'&&(m.type==='state')&&link.state!=='live')setLink('live');
- if(m.type==='state')applyRemote(m.s,m.at);
- else if(m.type==='hello'){applyRemote(m.s,m.at);send(stateMsg())}
+ if(m.type==='state')applyRemote(m.s,m.at,m.age);
+ else if(m.type==='hello'){applyRemote(m.s,m.at);if(ROLE==='board'||ROLE==='single')send(stateMsg())}
+ else if(m.type==='peers')onPeers(m);
  else if(m.type==='sfx')hearSfx(m);
 }
 function hearSfx(d){if(!d||!d.id||seenSfx.has(d.id)||typeof d.name!=='string'||!SOUNDS[d.name])return;seenSfx.add(d.id);play(d.name)}
 const stateMsg=()=>({type:'state',s:S,at:Date.now()});
-function applyRemote(s,at){
+function applyRemote(s,at,age){
  if(!s||s.v!==1||!Array.isArray(s.rounds)||!(s.seq>S.seq))return;
  const prevEnd=S.timer.endAt;
  const n=clone(s);
  /* timers travel as "time left when sent", so device clocks never need to agree */
- if(n.timer&&n.timer.endAt)n.timer.endAt=Date.now()+Math.max(0,n.timer.endAt-(at||n.ts||Date.now()));
+ if(n.timer&&n.timer.endAt)n.timer.endAt=Date.now()+Math.max(0,n.timer.endAt-(at||n.ts||Date.now())-(+age||0));
  S=n;save();
  if(prevEnd&&!S.timer.endAt&&S.timer.rem<=0&&firedFor!==prevEnd){firedFor=prevEnd;play('timeup')}
  if(S.sfx&&S.sfx.id)seenSfx.has(S.sfx.id)||(seenSfx.add(S.sfx.id),0);
@@ -432,7 +434,7 @@ function sfx(name){const id=Math.random().toString(36).slice(2);seenSfx.add(id);
 function setLink(state,text){link={state,text};updRoomUI()}
 function linkText(){
  if(ROLE==='phone')return{live:'Connected to room '+ROOMCODE,wait:'Connecting to room '+ROOMCODE+'…',off:link.text||'Not connected'}[link.state]||'';
- if(ROLE==='board'){const n=[...peerConns].filter(c=>c.open).length;if(link.state==='off')return link.text||'Room offline';return n?'Host phone connected':'Waiting for the host phone'}
+ if(ROLE==='board'){const n=phonesConnected();if(link.state==='off')return link.text||'Room offline';return n?'Host phone connected':'Waiting for the host phone'}
  if(ROLE==='hostwin')return link.state==='live'?'Connected to the board window':'Looking for the board window…';
  return'Screen only · works offline';
 }
@@ -440,12 +442,52 @@ function updRoomUI(){
  const t=linkText(),cls=link.state==='local'?'live':link.state;
  const h=$('hConn');if(h){h.className='conn '+cls;h.textContent=t}
  if(ROLE==='board'){
-  const n=[...peerConns].filter(c=>c.open).length,code=roomCodeNow||'····';
+  const n=phonesConnected(),code=roomCodeNow||'····';
   $('roomBlock').hidden=n>0&&S.idx!==-1;
   $('roomCode').textContent=code;
   $('roomHow').innerHTML=link.state==='off'?esc(link.text):n?'<b>Host phone connected.</b> Ready to play.':(location.protocol.startsWith('http')?'Scan the code, or open this game on your phone, choose <b>Join as host</b> and type the code.':'Open this game file on your phone, choose <b>Join as host</b> and type the code.');
-  const c=$('roomChip');c.hidden=false;c.className='chip '+(link.state==='off'?'off':n?'live':'wait');c.textContent=`Room ${code} · ${t}`;
+  const c=$('roomChip');c.hidden=n>0&&link.state!=='off';c.className='chip '+(link.state==='off'?'off':n?'live':'wait');c.textContent=`Room ${code} · ${t}`;
  }
+}
+
+/* ---- server relay (used when the game is served by its own server) ---- */
+let relay=null,relayPeers={board:0,phone:0};
+function phonesConnected(){return relay?relayPeers.phone:[...peerConns].filter(c=>c.open).length}
+async function relayAvailable(){
+ if(!location.protocol.startsWith('http'))return false;
+ try{const r=await fetch('/api/health',{cache:'no-store'});if(!r.ok)return false;const j=await r.json();return !!(j&&j.relay)}catch(e){return false}
+}
+function relaySend(m){
+ if(!relay)return;
+ const body=JSON.stringify({...m,from:MYID});
+ fetch('/api/rooms/'+relay.code,{method:'POST',headers:{'Content-Type':'application/json'},body}).catch(()=>{
+  setTimeout(()=>fetch('/api/rooms/'+relay.code,{method:'POST',headers:{'Content-Type':'application/json'},body}).catch(()=>{}),1500);
+ });
+}
+function startRelay(role,code){
+ relay={code,role,es:null};
+ const es=new EventSource('/api/rooms/'+code+'/events?role='+role);relay.es=es;
+ es.onopen=()=>{
+  if(role==='phone')send({type:'hello',s:S,at:Date.now()});
+  else if(S.seq>0)send(stateMsg());
+  updRoomUI();
+ };
+ es.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(_){return}if(!m||m.from===MYID)return;onMsg(m)};
+ es.onerror=()=>{relayPeers={board:0,phone:0};setLink('off',role==='phone'?'Lost the connection. Reconnecting…':'Room connection lost. Reconnecting…')};
+}
+let lastPeers={board:0,phone:0};
+function onPeers(m){
+ relayPeers={board:+m.board||0,phone:+m.phone||0};
+ if(ROLE==='phone'){
+  if(relayPeers.board>0){if(link.state!=='live'){setLink('live');toast('Connected to the big screen')}}
+  else setLink('off',`Big screen with code ${ROOMCODE} isn’t open. Check the code on the screen.`);
+ }
+ if(ROLE==='board'){
+  if(relayPeers.phone>lastPeers.phone)toast('Host phone connected');
+  else if(relayPeers.phone<lastPeers.phone&&relayPeers.phone===0)toast('Host phone disconnected');
+  setLink('wait');
+ }
+ lastPeers=relayPeers;updRoomUI();
 }
 
 /* ---- PeerJS loader ---- */
@@ -456,6 +498,11 @@ let roomCodeNow=null,idTries=0;
 
 async function startBoard(){
  setLink('wait');
+ if(await relayAvailable()){
+  try{roomCodeNow=localStorage.getItem('survey-says-room')}catch(e){}
+  if(!roomCodeNow){roomCodeNow=newCode();try{localStorage.setItem('survey-says-room',roomCodeNow)}catch(e){}}
+  updRoomUI();showQR();startRelay('board',roomCodeNow);return;
+ }
  try{await loadPeer()}catch(e){setLink('off','Can’t reach the connection service. Check the internet, or press H, choose Menu and use Screen only.');return}
  try{roomCodeNow=localStorage.getItem('survey-says-room')}catch(e){}
  if(!roomCodeNow){roomCodeNow=newCode();try{localStorage.setItem('survey-says-room',roomCodeNow)}catch(e){}}
@@ -496,6 +543,7 @@ function showQR(){
 let phoneConn=null,phoneRetry=null;
 async function startPhone(){
  setLink('wait');
+ if(await relayAvailable()){startRelay('phone',ROOMCODE);return}
  try{await loadPeer()}catch(e){setLink('off','Can’t reach the connection service. Check your phone’s internet.');return}
  peer=new Peer();
  peer.on('open',connectPhone);
@@ -723,7 +771,7 @@ host.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||
   case'drawer':toggleDrawer(false);break;
   case'menu':location.hash='menu';break;
   case'hostwin':openHostWindow();break;
-  case'newcode':roomCodeNow=newCode();try{localStorage.setItem('survey-says-room',roomCodeNow)}catch(e){}idTries=0;peerConns.forEach(c=>{try{c.close()}catch(e){}});peerConns.clear();showQR();openBoardPeer();updRoomUI();renderHost();toast('New code: '+roomCodeNow);break;
+  case'newcode':roomCodeNow=newCode();try{localStorage.setItem('survey-says-room',roomCodeNow)}catch(e){}idTries=0;peerConns.forEach(c=>{try{c.close()}catch(e){}});peerConns.clear();showQR();if(relay){try{relay.es.close()}catch(e){}relayPeers={board:0,phone:0};lastPeers=relayPeers;startRelay('board',roomCodeNow)}else openBoardPeer();updRoomUI();renderHost();toast('New code: '+roomCodeNow);break;
   case'reset':if(resetArmed>Date.now()){snap();const keep=S.rounds,sq=S.seq;S=newState();S.seq=sq;S.rounds=keep;S.rs=keep.map(freshRS);resetArmed=0;commit();toast('Game reset. Undo brings it back.')}else{resetArmed=Date.now()+4000;renderHost();setTimeout(()=>{if(resetArmed&&resetArmed<=Date.now()){resetArmed=0;renderHost()}},4100)}break;
  }});
 host.addEventListener('change',e=>{const el=e.target,c=el.dataset.ch;if(!c)return;const g=el.dataset.arg;
@@ -795,6 +843,21 @@ function loop(){
 function renderAll(){renderStage();if(CTRL&&(MODE==='host'||document.body.classList.contains('drawer-open')))renderHost();if(ROLE==='board')updRoomUI()}
 window.addEventListener('hashchange',()=>location.reload());
 /* ---------- start ---------- */
+/* When served from the server, questions come from game.json so they can be edited without touching this file. */
+function applyGameFile(g){
+ if(!g||!Array.isArray(g.rounds)||g.rounds.length!==10)throw new Error('game.json needs exactly 10 rounds');
+ const rounds=g.rounds.map((r,i)=>{const a=(r.answers||[]).slice(0,6).map(x=>[String(x.answer??''),Math.max(0,Math.round(+x.points||0))]);while(a.length<6)a.push(['',0]);return{q:String(r.question||''),tag:String(r.mission||''),mult:[1,2,3].includes(+r.multiplier)?+r.multiplier:1,answers:a,take:String(r.takeaway||''),note:String(r.hostNote||'')}});
+ ROUNDS.splice(0,10,...rounds);
+ if(Array.isArray(g.fastMoney)&&g.fastMoney.length===5)FM_Q.splice(0,5,...g.fastMoney.map(String));
+ return g;
+}
+if(location.protocol.startsWith('http')){
+ fetch('game.json',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(g=>{
+  if(!g)return;applyGameFile(g);
+  if(S.seq===0){const t=Array.isArray(g.teams)?g.teams:[];S=newState();t.slice(0,2).forEach((n,i)=>{if(n)S.teams[i].name=String(n)});boardSig='';renderAll()}
+ }).catch(e=>console.warn('Using built-in questions:',e.message));
+}
+
 function go(h){location.hash=h}
 $('goBoard').onclick=()=>go('board');
 $('goSingle').onclick=()=>go('single');
